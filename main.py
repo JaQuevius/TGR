@@ -13,6 +13,8 @@ import os
 import re
 import socket
 import sys
+from email.parser import BytesParser
+from email.policy import default
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict, Optional, Tuple
@@ -80,7 +82,40 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
             self._send_json(library.get_playlists_catalog())
             return
 
-        # 3. API: Game snapshot
+        # 3. API: Lobby library metadata
+        library_match = re.fullmatch(r"/api/game/(\d{4})/library", path)
+        if library_match:
+            code = library_match.group(1)
+            token = self.headers.get("X-Player-Token", "").strip()
+            if not token:
+                self._send_error("Missing X-Player-Token header.", HTTPStatus.UNAUTHORIZED)
+                return
+            try:
+                self._send_json(STORE.get_game_library(code, token))
+            except KeyError:
+                self._send_error("lobby_gone", HTTPStatus.NOT_FOUND)
+            except PermissionError:
+                self._send_error("bad_token", HTTPStatus.UNAUTHORIZED)
+            return
+
+        # 4. API: Lobby-uploaded audio
+        upload_match = re.fullmatch(r"/api/game/(\d{4})/audio/([A-Za-z0-9_-]+)", path)
+        if upload_match:
+            code, track_id = upload_match.groups()
+            token = self.headers.get("X-Player-Token", "").strip()
+            if not token:
+                self._send_error("Missing X-Player-Token header.", HTTPStatus.UNAUTHORIZED)
+                return
+            try:
+                audio_bytes, content_type = STORE.get_uploaded_audio(code, token, track_id)
+                self._send_audio_bytes(audio_bytes, content_type)
+            except KeyError:
+                self._send_error("Audio clip not found.", HTTPStatus.NOT_FOUND)
+            except PermissionError:
+                self._send_error("bad_token", HTTPStatus.UNAUTHORIZED)
+            return
+
+        # 5. API: Game snapshot
         if path.startswith("/api/game/"):
             code = path[len("/api/game/") :].strip("/")
             if not game.CODE_PATTERN.fullmatch(code):
@@ -103,13 +138,13 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
                 self._send_error(str(exc), HTTPStatus.BAD_REQUEST)
             return
 
-        # 4. Audio Streaming Endpoint: /audio/<id>
+        # 6. Audio Streaming Endpoint: /audio/<id>
         if path.startswith("/audio/"):
             audio_id = path[len("/audio/") :].strip("/")
             self._serve_audio(audio_id)
             return
 
-        # 5. Static File Routing
+        # 7. Static File Routing
         self._serve_static(path)
 
     def do_POST(self) -> None:
@@ -117,6 +152,18 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
         path = parsed.path
 
         try:
+            upload_match = re.fullmatch(r"/api/game/(\d{4})/upload", path)
+            if upload_match:
+                code = upload_match.group(1)
+                token = self.headers.get("X-Player-Token", "").strip()
+                if not token:
+                    self._send_error("Missing X-Player-Token header.", HTTPStatus.UNAUTHORIZED)
+                    return
+                filename, data, content_type = self._parse_multipart_upload()
+                result = STORE.upload_track(code, token, filename, data, content_type)
+                self._send_json(result)
+                return
+
             payload = self._parse_json_payload()
 
             # Host a new lobby
@@ -151,7 +198,8 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
             if action == "round":
                 mode = str(payload.get("mode", "buzzer"))
                 playlist_id = str(payload.get("playlist_id", ""))
-                res = STORE.start_round(code, token, mode, playlist_id)
+                reverse_audio = bool(payload.get("reverse_audio", False))
+                res = STORE.start_round(code, token, mode, playlist_id, reverse_audio)
                 self._send_json(res)
             elif action == "buzz":
                 round_id = str(payload.get("round_id", ""))
@@ -272,6 +320,14 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(audio_bytes)
 
+    def _send_audio_bytes(self, audio_bytes: bytes, content_type: str) -> None:
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(audio_bytes)))
+        self.send_header("Accept-Ranges", "bytes")
+        self.end_headers()
+        self.wfile.write(audio_bytes)
+
     # -------------------------------------------------------------------------
     # Protocol Utilities
     # -------------------------------------------------------------------------
@@ -282,6 +338,27 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
             raise ValueError("Payload too large.")
         raw = self.rfile.read(length) if length > 0 else b"{}"
         return json.loads(raw.decode("utf-8") or "{}")
+
+    def _parse_multipart_upload(self) -> Tuple[str, bytes, str]:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0 or length > game.MAX_UPLOAD_BYTES + 1_000_000:
+            raise ValueError("Upload is empty or too large.")
+        content_type = self.headers.get("Content-Type", "")
+        if not content_type.lower().startswith("multipart/form-data"):
+            raise ValueError("Upload must use multipart form data.")
+
+        body = self.rfile.read(length)
+        header = (
+            f"Content-Type: {content_type}\r\n"
+            "MIME-Version: 1.0\r\n"
+            "\r\n"
+        ).encode("utf-8")
+        message = BytesParser(policy=default).parsebytes(header + body)
+        for part in message.iter_attachments():
+            filename = part.get_filename()
+            if filename:
+                return filename, part.get_payload(decode=True) or b"", part.get_content_type()
+        raise ValueError("Choose an MP3 file to upload.")
 
     def _send_json(self, payload: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
         body = json.dumps(payload).encode("utf-8")

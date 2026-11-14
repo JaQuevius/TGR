@@ -220,6 +220,7 @@ async function pollGame() {
 // ---------------------------------------------------------------------------
 
 function handleSnapshot(snapshot) {
+  const uploadsChanged = lastSnapshot && lastSnapshot.upload_count !== snapshot.upload_count;
   lastSnapshot = snapshot;
   updateConnectionPill();
 
@@ -228,6 +229,7 @@ function handleSnapshot(snapshot) {
     session.host = snapshot.me.host;
     session.pid = snapshot.me.pid;
   }
+  if (session.host && uploadsChanged) loadPlaylists();
 
   renderPlayers(snapshot.players);
 
@@ -259,6 +261,7 @@ function handleSnapshot(snapshot) {
     activeRoundSettings = {
       mode: round.mode,
       playlistId: round.playlist_id || $('playlist-select').value,
+      reverseAudio: Boolean(round.reverse_audio),
     };
     hasBuzzedThisRound = false;
     pendingEarlyAnswer = null;
@@ -268,7 +271,7 @@ function handleSnapshot(snapshot) {
 
     // Preload audio and schedule playback
     if (round.source) {
-      preloadAudio(round.source);
+      preloadAudio({ ...round.source, reverse: Boolean(round.reverse_audio), token: session.token });
       schedulePlayback(round.start_at, 12);
     }
   }
@@ -312,6 +315,7 @@ function scheduleAutomaticNextRound(round) {
         body: JSON.stringify({
           mode: activeRoundSettings.mode,
           playlist_id: activeRoundSettings.playlistId,
+          reverse_audio: activeRoundSettings.reverseAudio,
         }),
       });
       handleSnapshot(res.snapshot);
@@ -654,6 +658,7 @@ function setupDomListeners() {
     $('lobby-error').textContent = '';
     const mode = $('mode-select').value;
     const playlistId = $('playlist-select').value;
+    const reverseAudio = $('audio-direction-select').value === 'reverse';
     if (session.local) {
       $('lobby-error').textContent = 'Local demo lobby created. Start the Python server for shared rounds across devices.';
       return;
@@ -661,7 +666,7 @@ function setupDomListeners() {
     try {
       const res = await api(`/api/game/${session.code}/round`, {
         method: 'POST',
-        body: JSON.stringify({ mode, playlist_id: playlistId }),
+        body: JSON.stringify({ mode, playlist_id: playlistId, reverse_audio: reverseAudio }),
       });
       handleSnapshot(res.snapshot);
     } catch (err) {
@@ -718,6 +723,35 @@ function setupDomListeners() {
     resumeAudio();
     $('play-sound-btn').textContent = '🔊 Sound playing';
   };
+
+  $('upload-form').onsubmit = async (event) => {
+    event.preventDefault();
+    const files = Array.from($('mp3-files').files || []);
+    if (!files.length) {
+      $('upload-status').textContent = 'Choose at least one MP3 file.';
+      return;
+    }
+
+    $('upload-status').textContent = 'Uploading...';
+    try {
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('file', file, file.name);
+        const response = await fetch(`/api/game/${session.code}/upload`, {
+          method: 'POST',
+          headers: { 'X-Player-Token': session.token },
+          body: formData,
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Upload failed.');
+      }
+      $('upload-status').textContent = `${files.length} MP3${files.length === 1 ? '' : 's'} added to the lobby.`;
+      $('mp3-files').value = '';
+      if (session.host) await loadPlaylists();
+    } catch (err) {
+      $('upload-status').textContent = err.message;
+    }
+  };
 }
 
 async function enterLobby() {
@@ -746,7 +780,9 @@ async function loadPlaylists() {
   try {
     const playlists = session.local
       ? localPlaylists
-      : (await api('/api/library')).filter((playlist) => playlist.id === 'local-mp3');
+      : (await api(`/api/game/${session.code}/library`)).filter(
+          (playlist) => playlist.id === 'local-mp3' || playlist.id === 'player-uploads',
+        );
     $('playlist-select').innerHTML = playlists
       .map((pl) => `<option value="${escapeHtml(pl.id)}" selected>${escapeHtml(pl.name)}</option>`)
       .join('');

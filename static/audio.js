@@ -12,6 +12,9 @@ let isMuted = false;
 let audioUnlocked = false;
 let currentSource = null;
 let currentAudioElement = null;
+let currentAudioBuffer = null;
+let currentBufferSource = null;
+let audioContext = null;
 let currentBlobUrl = null;
 let ytPlayer = null;
 let ytReady = false;
@@ -65,6 +68,10 @@ export function unlockAudio() {
 }
 
 export function resumeAudio() {
+  if (currentSource && currentSource.type === 'audio' && currentSource.reverse && currentAudioBuffer) {
+    startPlayback(0);
+    return;
+  }
   if (currentSource && currentSource.type === 'youtube') {
     if (isMuted) return;
     const mount = document.getElementById('youtube-direct-mount');
@@ -100,10 +107,24 @@ export async function preloadAudio(source) {
   if (!source) return;
 
   if (source.type === 'audio') {
-    const audioUrl = `/audio/${encodeURIComponent(source.id)}`;
+    const audioUrl = source.url || `/audio/${encodeURIComponent(source.id)}`;
     try {
-      const resp = await fetch(audioUrl);
+      const headers = source.token ? { 'X-Player-Token': source.token } : {};
+      const resp = await fetch(audioUrl, { headers });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      if (source.reverse) {
+        audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+        currentAudioBuffer = await audioContext.decodeAudioData(await resp.arrayBuffer());
+        for (let channel = 0; channel < currentAudioBuffer.numberOfChannels; channel++) {
+          const samples = currentAudioBuffer.getChannelData(channel);
+          for (let left = 0, right = samples.length - 1; left < right; left++, right--) {
+            const value = samples[left];
+            samples[left] = samples[right];
+            samples[right] = value;
+          }
+        }
+        return;
+      }
       const blob = await resp.blob();
       currentBlobUrl = URL.createObjectURL(blob);
       currentAudioElement = new Audio(currentBlobUrl);
@@ -147,7 +168,19 @@ export function schedulePlayback(startAtMs, durationSec = 12) {
 function startPlayback(startOffsetSec = 0) {
   if (!currentSource) return;
 
-  if (currentSource.type === 'audio' && currentAudioElement) {
+  if (currentSource.type === 'audio' && currentSource.reverse && currentAudioBuffer && audioContext) {
+    try {
+      if (currentBufferSource) currentBufferSource.stop();
+      currentBufferSource = audioContext.createBufferSource();
+      currentBufferSource.buffer = currentAudioBuffer;
+      currentBufferSource.connect(audioContext.destination);
+      if (audioContext.state === 'suspended') audioContext.resume();
+      currentBufferSource.start(0, Math.min(startOffsetSec, currentAudioBuffer.duration));
+    } catch (err) {
+      console.warn('Reversed audio playback failed:', err);
+      if (onAudioBlockedListener) onAudioBlockedListener(true);
+    }
+  } else if (currentSource.type === 'audio' && currentAudioElement) {
     try {
       currentAudioElement.currentTime = startOffsetSec;
       currentAudioElement.muted = isMuted;
@@ -176,6 +209,13 @@ export function stopAudio() {
     } catch (e) {}
     currentAudioElement = null;
   }
+  if (currentBufferSource) {
+    try {
+      currentBufferSource.stop();
+    } catch (e) {}
+    currentBufferSource = null;
+  }
+  currentAudioBuffer = null;
 
   if (currentBlobUrl) {
     try {
