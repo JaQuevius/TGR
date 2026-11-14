@@ -173,6 +173,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .code { color: var(--crust); font: 900 44px/1 monospace; letter-spacing: .08em; }
 .code small { font: 12px sans-serif; color: var(--muted); display: block; letter-spacing: .1em; margin-bottom: 6px; }
 
+#join-qr { margin-top: 12px; }
+#join-qr svg { width: 220px; height: 220px; background: #fff; border-radius: 8px; }
+
 .players { margin: 20px 0; display: grid; gap: 8px; }
 .player {
   padding: 12px 14px;
