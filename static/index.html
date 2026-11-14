@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Soundbite — Toasted Music Guessing</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<main>
+  <!-- Global Top Header -->
+  <header>
+    <div class="brand">🍞 sound<span>bite</span></div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <button id="sound-toggle-btn" class="pill-btn sound-btn" title="Toggle audio on this device">🔊 Sound ON</button>
+      <div id="connection-pill" class="pill conn-online">● Online</div>
+    </div>
+  </header>
+
+  <!-- Sound Permission Prompt (if browser autoplay is blocked) -->
+  <div id="sound-blocked-banner" class="sound-alert hidden">
+    🎵 Audio is currently muted by your browser. <button id="enable-sound-btn" class="small-btn">Tap to enable audio</button>
+  </div>
+
+  <!-- SECTION 1: HOME -->
+  <section id="home">
+    <div class="hero">
+      <div class="eyebrow">a toasted music guessing game</div>
+      <h1>Hear it.<br><em>Claim it.</em></h1>
+      <p>Play short soundbites, buzz in before your friends, and claim the floor to climb the scoreboard.</p>
+    </div>
+
+    <!-- Rejoin previous session if available -->
+    <div id="rejoin-container" class="card hidden" style="margin-bottom: 20px; border-color: var(--orange);">
+      <h3 style="margin: 0 0 6px; color: var(--crust);">Resume previous seat</h3>
+      <p style="margin: 0 0 14px; font-size: 14px;">Found an active session from this device.</p>
+      <button id="btn-rejoin-last" class="wide" style="background: var(--lime);">Rejoin Lobby</button>
+    </div>
+
+    <div class="grid">
+      <form class="card" id="host-form">
+        <h2>Host a lobby</h2>
+        <p>Start a room and invite your friends on their phones.</p>
+        <label for="host-name">Your name</label>
+        <input id="host-name" maxlength="24" placeholder="DJ Nova" required autocomplete="off">
+        <button class="wide" type="submit">Create lobby <span>→</span></button>
+        <div class="error" id="host-error"></div>
+      </form>
+
+      <form class="card" id="join-form">
+        <h2>Join a lobby</h2>
+        <p>Enter the four-digit code from your host.</p>
+        <label for="join-name">Your name</label>
+        <input id="join-name" maxlength="24" placeholder="Your name" required autocomplete="off">
+        <label for="join-code">Lobby code</label>
+        <input id="join-code" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="0000" required autocomplete="off">
+        <button class="wide" type="submit">Join game <span>→</span></button>
+        <div class="error" id="join-error"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- SECTION 2: LOBBY -->
+  <section id="lobby" class="hidden">
+    <div class="topline">
+      <div>
+        <div class="code"><small>lobby code</small><span id="lobby-code">0000</span></div>
+      </div>
+      <button class="secondary" id="btn-leave-lobby">Leave lobby</button>
+    </div>
+
+    <div class="grid" style="margin-top:26px">
+      <!-- Player Roster -->
+      <div class="card">
+        <h2>Players <span id="player-count">(0)</span></h2>
+        <p>Share the four-digit code. Anyone can join at any time.</p>
+        <div class="players" id="lobby-players"></div>
+      </div>
+
+      <!-- Host Controls -->
+      <div class="card" id="host-controls">
+        <h2>Round Setup</h2>
+        <p>Choose the game mode and playlist for the upcoming round.</p>
+        <label for="mode-select">Game Mode</label>
+        <select id="mode-select">
+          <option value="buzzer">Buzzer Mode (Buzz & claim floor)</option>
+          <option value="race">Typing Race (Everyone types)</option>
+        </select>
+
+        <label for="playlist-select">Song Library</label>
+        <select id="playlist-select"></select>
+
+        <button class="wide" id="btn-start-round">Serve soundbite <span>▶</span></button>
+        <div class="error" id="lobby-error"></div>
+      </div>
+
+      <!-- Player Waiting Card -->
+      <div class="card hidden" id="waiting-card">
+        <h2>You're in.</h2>
+        <p>Wait for the host to serve the next soundbite.</p>
+        <div class="wave">♪ ♫ ♪</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 3: ACTIVE GAME / ROUND -->
+  <section id="game" class="hidden">
+    <div class="topline">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div class="pill">lobby <span id="game-code">0000</span></div>
+        <div id="game-mode-badge" class="pill" style="border-color:var(--bread);">Buzzer</div>
+      </div>
+      <div class="timer" id="round-timer">12s left</div>
+    </div>
+
+    <div class="game-layout" style="margin-top:18px">
+      <div class="card">
+        <h2 id="round-heading">Name that sound</h2>
+
+        <!-- Soundbite Audio Player & Hidden YouTube Mount -->
+        <div class="audio-box" id="audio-container">
+          <div class="wave" id="audio-wave">♪ ♫ ♪</div>
+          <div id="audio-status-hint" style="font-size:13px; color:var(--muted); margin-top:8px;">Listen closely...</div>
+          <!-- Hidden YouTube Player Container (min 200x200 for API compliance, hidden behind curtain) -->
+          <div id="youtube-curtain" class="youtube-curtain">
+            <div id="youtube-player-mount"></div>
+          </div>
+        </div>
+
+        <!-- Buzzer Button -->
+        <button id="buzz-btn" class="buzz-button buzz-waiting" type="button">
+          🔔 BUZZ IN
+        </button>
+
+        <!-- Answer Form (Typing starts immediately!) -->
+        <form id="answer-form" class="answer-row hidden" style="margin-top:16px;">
+          <input id="answer-input" placeholder="Type the song title..." autocomplete="off" required>
+          <button id="answer-submit-btn" type="submit">Submit</button>
+        </form>
+
+        <div class="status" id="answer-status"></div>
+
+        <!-- REVEAL CARD (Appears when round is revealed) -->
+        <div id="reveal-card" class="reveal-card hidden">
+          <h3 id="reveal-title">Song Title</h3>
+          <p id="reveal-artist" style="margin: 4px 0 14px; font-weight:600; color:var(--muted);">Artist Name</p>
+          <div id="reveal-winner" style="font-size:15px; font-weight:bold; color:var(--crust);"></div>
+
+          <!-- Host Next Round Controls -->
+          <div id="host-next-controls" class="hidden" style="margin-top: 18px; display:flex; gap:10px;">
+            <button id="btn-next-round" style="flex:1;">Next Round ▶</button>
+            <button id="btn-finish-game" class="secondary">End Game ⏹</button>
+          </div>
+        </div>
+
+        <!-- Live Round Events Feed -->
+        <div class="feed" id="game-feed"></div>
+      </div>
+
+      <!-- Scoreboard Sidebar -->
+      <div class="card">
+        <h2>Scoreboard</h2>
+        <div class="players" id="game-scoreboard"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEBUG PANEL (Visible with ?debug=1) -->
+  <aside id="debug-panel" class="debug-panel hidden">
+    <div class="debug-header">
+      <strong>🛠 Debug & Offline Demo Panel</strong>
+      <button id="debug-toggle-expand" style="padding:2px 8px; font-size:11px;">Min</button>
+    </div>
+    <div id="debug-body" class="debug-body">
+      <div class="debug-row">
+        <label><input type="checkbox" id="debug-offline-toggle"> <strong>Simulate Disconnected</strong></label>
+      </div>
+      <div class="debug-row">
+        <label><input type="checkbox" id="debug-pause-outbox"> Pause Outbox Flush</label>
+      </div>
+      <div class="debug-row">
+        <label>Latency:
+          <select id="debug-latency-select">
+            <option value="0">0 ms (Instant)</option>
+            <option value="200">200 ms (Normal 4G)</option>
+            <option value="800">800 ms (High Lag)</option>
+          </select>
+        </label>
+      </div>
+      <hr style="border:0; border-top:1px solid rgba(255,255,255,0.15); margin:8px 0;">
+      <div class="debug-telemetry">
+        <div>Clock Offset: <span id="debug-offset">0</span> ms</div>
+        <div>NTP RTT: <span id="debug-rtt">0</span> ms</div>
+        <div>Conn State: <span id="debug-conn">online</span></div>
+        <div>Outbox Queue: <span id="debug-outbox">0</span> actions</div>
+        <div>Estimated Server Now: <span id="debug-server-time">0</span></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
