@@ -17,11 +17,18 @@ answers earning 80, 60, and so on (down to 40).
 4. As host, choose a track from the built-in bread library before starting
    each round. Players only see the soundbite and answer box.
 
-The starter library uses generated demo clips so the project works without
-provider credentials. Spotify, YouTube, and SoundCloud playback can be added
-through their official browser SDKs/widgets, but each has provider rules,
-authentication requirements, and content licensing restrictions; the app
-should not download or re-host those tracks.
+The static Pages demo uses official YouTube embeds for curated playlists of
+recognizable songs from the 90s, 2000s, 2010s, and EDM. The host chooses only a
+playlist; each round randomly selects the song. YouTube playback stays inside
+the visible player; the app does not download, extract, or re-host copyrighted
+audio.
+
+### GitHub Pages demo
+
+`index.html` is a dependency-free static demo suitable for GitHub Pages. It
+has the same host, join, library, YouTube playback, and scoring flow, but state
+is local to the current browser. Real multiplayer across devices still
+requires the Python server in `main.py` (or a hosted backend).
 
 ## Authors
 
