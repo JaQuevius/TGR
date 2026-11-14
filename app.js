@@ -13,11 +13,11 @@ function render(){
   $("count").textContent=`(${state.players.length})`;
 }
 
-function loadVideo(track){
+function loadVideo(track,autoplay=false){
   pendingVideo=track;
   if(!track)return;
   const id=encodeURIComponent(track.videoId);
-  $("player").innerHTML=`<iframe title="YouTube soundbite" src="https://www.youtube.com/embed/${id}?start=0&end=10&controls=1&rel=0&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+  $("player").innerHTML=`<iframe title="YouTube soundbite" src="https://www.youtube.com/embed/${id}?start=0&end=10&autoplay=${autoplay?1:0}&controls=0&disablekb=1&modestbranding=1&rel=0&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
 }
 
 function setLibrary(){
@@ -46,6 +46,10 @@ $("start").onclick=()=>{
   state.answers=[];state.started=Date.now();state.buzzedBy="";state.eliminated=[];state.finished=false;
   $("title").textContent="Name that sound";$("status").textContent=`Playing a surprise from ${state.playlist.name}. Buzz when you know it.`;
   $("feed").textContent="";show("game");render();loadVideo(state.track);
+};
+
+$("play-clip").onclick=()=>{
+  if(state.track)loadVideo(state.track,true);
 };
 
 $("buzz").onclick=()=>{
