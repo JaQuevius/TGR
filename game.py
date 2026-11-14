@@ -235,7 +235,7 @@ class GameStore:
                     "start_at": round_state.start_at,
                     "buzz_close": round_state.buzz_close,
                     "playlist_id": round_state.playlist_id,
-                    "source": round_state.track.source,  # source only, NEVER title/artist
+                    "source": {"type": "audio", "id": str(round_state.track.id)},
                     "events": list(round_state.events),
                     "winner": round_state.winner_pid,
                 }
@@ -267,7 +267,6 @@ class GameStore:
                         winner_name = game["players"][round_state.winner_pid].name
                     round_data["reveal"] = {
                         "title": round_state.track.title,
-                        "artist": round_state.track.artist,
                         "winner": winner_name,
                     }
 
@@ -713,7 +712,7 @@ class GameStore:
                 "start_at": round_state.start_at,
                 "buzz_close": round_state.buzz_close,
                 "playlist_id": round_state.playlist_id,
-                "source": round_state.track.source,
+                "source": {"type": "audio", "id": str(round_state.track.id)},
                 "events": list(round_state.events),
                 "winner": round_state.winner_pid,
             }
@@ -743,7 +742,6 @@ class GameStore:
                     winner_name = game["players"][round_state.winner_pid].name
                 round_data["reveal"] = {
                     "title": round_state.track.title,
-                    "artist": round_state.track.artist,
                     "winner": winner_name,
                 }
 

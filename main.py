@@ -221,26 +221,20 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
 
     def _serve_audio(self, audio_id: str) -> None:
         """Serves audio bytes supporting HTTP 206 Range requests for iOS Safari."""
-        # 1. Check in-memory store first
-        audio_bytes = library.get_audio_bytes(audio_id)
-        content_type = "audio/wav"
-
-        # 2. Check static/audio/<audio_id> on disk
-        if not audio_bytes:
-            for ext in (".wav", ".mp3", ".ogg"):
-                candidate = os.path.join(STATIC_DIR, "audio", f"{audio_id}{ext}")
-                if os.path.isfile(candidate):
-                    with open(candidate, "rb") as f:
-                        audio_bytes = f.read()
-                    content_type = {
-                        ".wav": "audio/wav",
-                        ".mp3": "audio/mpeg",
-                        ".ogg": "audio/ogg",
-                    }[ext]
-                    break
-
-        if not audio_bytes:
+        audio_path = library.get_audio_path(audio_id)
+        if not audio_path or not audio_path.is_file():
             self._send_error("Audio clip not found.", HTTPStatus.NOT_FOUND)
+            return
+
+        content_type = MIME_TYPES.get(audio_path.suffix.lower())
+        if not content_type or not content_type.startswith("audio/"):
+            self._send_error("Unsupported audio format.", HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
+            return
+
+        try:
+            audio_bytes = audio_path.read_bytes()
+        except OSError as exc:
+            self._send_error(f"Error reading audio file: {exc}", HTTPStatus.INTERNAL_SERVER_ERROR)
             return
 
         total_len = len(audio_bytes)

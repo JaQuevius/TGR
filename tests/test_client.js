@@ -22,6 +22,7 @@ global.sessionStorage = {
 
 import { sampleClock, syncClock, serverNow, getClockOffset, absorbSnapshotTime, setCustomFetch, _setManualOffset } from '../static/clock.js';
 import { Outbox, generateId, getConnectionState, setDebugOption, debugConfig, _resetConnectionState } from '../static/net.js';
+import { preloadAudio } from '../static/audio.js';
 
 test('clock.js: NTP offset and serverNow calculation', async () => {
   // Mock fetch returning server_time
@@ -97,4 +98,11 @@ test('net.js: debug offline toggle triggers offline connection state', () => {
   setDebugOption('simulateOffline', false);
   _resetConnectionState();
   assert.equal(getConnectionState(), 'online');
+});
+
+test('audio.js: rejects unsupported YouTube sources', async () => {
+  await assert.rejects(
+    preloadAudio({ type: 'youtube', videoId: 'example' }),
+    /Unsupported audio source type: youtube/,
+  );
 });

@@ -24,10 +24,6 @@ let hasBuzzedThisRound = false;
 let activeRoundSettings = null;
 let autoAdvanceRoundId = null;
 let autoAdvanceTimer = null;
-const localPlaylists = [
-  { id: 'local-mp3', name: 'My MP3s' },
-];
-
 // ---------------------------------------------------------------------------
 // Initialization & Session Management
 // ---------------------------------------------------------------------------
@@ -346,7 +342,6 @@ function renderRound(round) {
   if (round.phase === 'revealed' && round.reveal) {
     $('reveal-card').classList.remove('hidden');
     $('reveal-title').textContent = round.reveal.title;
-    $('reveal-artist').textContent = round.reveal.artist;
     $('reveal-winner').textContent = round.reveal.winner ? `🏆 Won by ${round.reveal.winner}` : 'No one got it this round!';
     $('host-next-controls').classList.toggle('hidden', !session.host);
     $('buzz-btn').classList.add('hidden');
@@ -741,9 +736,7 @@ async function enterLobby() {
 
 async function loadPlaylists() {
   try {
-    const playlists = session.local
-      ? localPlaylists
-      : (await api('/api/library')).filter((playlist) => playlist.id === 'local-mp3');
+    const playlists = session.local ? [] : await api('/api/library');
     $('playlist-select').innerHTML = playlists
       .map((pl) => `<option value="${escapeHtml(pl.id)}" selected>${escapeHtml(pl.name)}</option>`)
       .join('');

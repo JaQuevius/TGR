@@ -44,8 +44,7 @@ On startup, the server automatically detects and prints your LAN IP so phones ca
 4. **Choose Mode**:
    - **Buzzer Mode**: Buzz in first to claim the floor. Correct answer earns **+100 points**; wrong answer deducts **-50 points** and eliminates you for the remainder of the round.
    - **Typing Race**: Everyone races to type the title. Points are awarded by placement (**100, 80, 60, 40**).
-   - **My MP3s**: Local clips in `static/audio/` are streamed directly by the server.
-   - **Popular YouTube hits**: The library includes recognizable songs such as *Shape of You*, *Despacito*, *Gangnam Style*, *Hello*, *Sugar*, and *Faded*.
+   - **Audio playlists**: Each subfolder of `static/audio/` is a playlist; MP3 and WAV files inside it are tracks.
 5. **Multi-round Flow**: When the timer expires, the next song starts automatically. When the selected playlist is exhausted, the game returns everyone to the lobby. The host can also click **End Game** to return immediately.
 
 ---
@@ -57,7 +56,7 @@ To test or demo the headline offline scenario:
    ```
    http://localhost:8000/?debug=1
    ```
-2. In Tab 1, create a lobby as **Host**. Select **Bread demo (offline tones)** and **Buzzer mode**.
+2. In Tab 1, create a lobby as **Host**. Select a playlist discovered under `static/audio/` and **Buzzer mode**.
 3. In Tab 2, join as **Player B**.
 4. In Tab 3, join as **Player A**.
 5. Host clicks **Serve soundbite ▶**.
@@ -67,7 +66,7 @@ To test or demo the headline offline scenario:
 2. Notice the top header badge immediately displays `✕ Offline`.
 3. Player B presses the **BUZZ IN** button while offline:
    - The button shows `⏳ Buzzed, confirming...`.
-   - The answer input opens immediately and Player B starts typing the answer (`Sunrise on Sourdough`).
+   - The answer input opens immediately and Player B starts typing the title shown by the selected audio filename.
 4. Player A (still online) presses the **BUZZ IN** button:
    - The server enters the **locking window** (`LOCK_MS`).
 5. Player B unchecks **"Simulate Disconnected"** to restore connection:
@@ -130,15 +129,12 @@ python tests/verify_scenarios.py
 
 ## 🎵 Audio Architecture
 
-1. **In-Memory Synthesized Audio ("Bread demo")**:
-   - Zero-dependency harmonic WAV synthesis generated at startup.
-   - Ideal for offline testing and demos without external network needs.
+1. **Folder-based playlists**:
+   - Each subfolder under `static/audio/` becomes a playlist.
+   - MP3 and WAV files in that folder become tracks; the filename stem is the displayed title.
 2. **Audio Preloading into Blobs**:
    - Preloaded into a `Blob` URL during countdown so audio continues playing even if the connection drops mid-clip.
    - Direct HTTP 206 Partial Content (Range) support for iOS Safari.
-3. **Hidden YouTube Player**:
-   - YouTube IFrame API wrapper for curated playlists (90s, 2000s, 2010s, EDM).
-   - Placed in a 200x200 container hidden behind an opaque bakery-themed visual curtain so video and title are never visible to players.
 
 ---
 
@@ -146,12 +142,12 @@ python tests/verify_scenarios.py
 
 - [`main.py`](file:///c:/Users/richa/Durhack%202026/TGR/main.py): HTTP server, explicit MIME router, Range streaming, and API dispatcher.
 - [`game.py`](file:///c:/Users/richa/Durhack%202026/TGR/game.py): Pure game logic, GameStore, buzzer state machine, presence tracking, and snapshot filtering.
-- [`library.py`](file:///c:/Users/richa/Durhack%202026/TGR/library.py): Track metadata, aliases, fuzzy normalization, and audio synthesis.
+- [`library.py`](file:///c:/Users/richa/Durhack%202026/TGR/library.py): Folder-based playlists, track metadata, and answer normalization.
 - [`static/index.html`](file:///c:/Users/richa/Durhack%202026/TGR/static/index.html): Semantic UI layout, tactile buzzer button, and debug panel.
 - [`static/styles.css`](file:///c:/Users/richa/Durhack%202026/TGR/static/styles.css): Bakery design system, responsive buzzer states, and connection badges.
 - [`static/clock.js`](file:///c:/Users/richa/Durhack%202026/TGR/static/clock.js): DOM-free NTP clock synchronization module.
 - [`static/net.js`](file:///c:/Users/richa/Durhack%202026/TGR/static/net.js): DOM-free persistent outbox and connection manager.
-- [`static/audio.js`](file:///c:/Users/richa/Durhack%202026/TGR/static/audio.js): Audio preloader, scheduler, and hidden YouTube controller.
+- [`static/audio.js`](file:///c:/Users/richa/Durhack%202026/TGR/static/audio.js): Audio-file preloader and synchronized playback scheduler.
 - [`static/app.js`](file:///c:/Users/richa/Durhack%202026/TGR/static/app.js): Main client controller and state coordinator.
 - [`tests/`](file:///c:/Users/richa/Durhack%202026/TGR/tests/): Test suite for python unit tests, HTTP tests, client tests, and scenario simulations.
 
