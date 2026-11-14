@@ -196,48 +196,51 @@ PAGE = r"""<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Soundbite</title>
   <style>
-    :root { --ink:#fff8e7; --muted:#b99a72; --bg:#2b160d; --panel:#422314;
-      --line:#704327; --lime:#ffd447; --orange:#f28b32; --bread:#f7b955; }
+    :root { --ink:#3b1d0b; --muted:#8b5a32; --bg:#fff1c9; --panel:#fff9e9;
+      --line:#d68b3c; --lime:#f7c331; --orange:#e56b2f; --bread:#c96d2d; --crust:#9c4f23; }
     * { box-sizing:border-box; }
-    body { margin:0; background:radial-gradient(circle at 80% 5%,#8d4a20 0,transparent 35%),var(--bg);
+    body { margin:0; background:radial-gradient(circle at 80% 5%,#ffd875 0,transparent 35%),var(--bg);
       color:var(--ink); font:16px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; min-height:100vh; }
-    main { width:min(1040px,calc(100% - 32px)); margin:auto; padding:38px 0 64px; }
+    main { width:min(1040px,calc(100% - 32px)); margin:auto; padding:38px 0 64px; position:relative; }
+    main::after { content:"✦  ✧  ✦  ✧  ✦"; position:absolute; right:0; top:12px; color:#e4a33e; letter-spacing:13px; font-size:15px; }
     header { display:flex; justify-content:space-between; align-items:center; margin-bottom:70px; }
-    .brand { font-weight:900; letter-spacing:-.06em; font-size:26px; }
-    .brand span { color:var(--bread); } .pill { border:1px solid var(--line); padding:7px 12px;
+    .brand { font-weight:900; letter-spacing:-.06em; font-size:28px; color:var(--crust); }
+    .brand::first-letter { font-size:34px; } .brand span { color:var(--bread); } .pill { border:1px solid var(--line); padding:7px 12px;
       border-radius:99px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.12em; }
-    .hero { max-width:700px; margin-bottom:44px; } h1 { font-size:clamp(48px,8vw,94px); letter-spacing:-.08em;
-      line-height:.9; margin:0 0 25px; } h1 em { color:var(--lime); font-style:normal; }
+    .hero { max-width:700px; margin-bottom:44px; } .eyebrow { color:var(--bread); font-weight:900; text-transform:uppercase;
+      letter-spacing:.18em; font-size:12px; margin-bottom:17px; } h1 { font-size:clamp(48px,8vw,94px); letter-spacing:-.08em;
+      line-height:.9; margin:0 0 25px; } h1 em { color:var(--orange); font-style:normal; }
     .hero p { color:var(--muted); font-size:19px; max-width:520px; }
     .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
-    .card { background:rgba(27,26,23,.9); border:1px solid var(--line); border-radius:22px; padding:27px; }
-    .card h2 { margin:0 0 6px; letter-spacing:-.04em; font-size:25px; } .card p { color:var(--muted); margin:0 0 23px; }
+    .card { background:rgba(255,249,233,.94); border:2px solid var(--line); border-radius:22px; padding:27px;
+      box-shadow:0 7px 0 rgba(156,79,35,.18); }
+    .card h2 { margin:0 0 6px; letter-spacing:-.04em; font-size:25px; color:var(--crust); } .card p { color:var(--muted); margin:0 0 23px; }
     label { color:var(--muted); display:block; font-size:12px; text-transform:uppercase; letter-spacing:.1em; margin:16px 0 7px; }
-    input,select,button { font:inherit; border-radius:11px; } input,select { width:100%; padding:13px 14px; border:1px solid var(--line);
-      background:#2b160d; color:var(--ink); outline:none; } input:focus,select:focus { border-color:var(--lime); }
-    button { border:0; padding:13px 17px; font-weight:800; cursor:pointer; background:var(--lime); color:#15170f; }
-    button.secondary { background:transparent; color:var(--ink); border:1px solid var(--line); } button:disabled { opacity:.45; cursor:not-allowed; }
+    input,select,button { font:inherit; border-radius:11px; }     input,select { width:100%; padding:13px 14px; border:1px solid var(--line);
+      background:#fffdf5; color:var(--ink); outline:none; } input:focus,select:focus { border-color:var(--orange); }
+    button { border:0; padding:13px 17px; font-weight:800; cursor:pointer; background:var(--lime); color:var(--ink);
+      box-shadow:0 3px 0 #d59d1b; } button.secondary { background:transparent; color:var(--crust); border:1px solid var(--line); box-shadow:none; } button:disabled { opacity:.45; cursor:not-allowed; }
     .wide { width:100%; margin-top:20px; } .error { color:var(--orange); min-height:23px; margin-top:12px; font-size:14px; }
     .hidden { display:none !important; } .topline { display:flex; justify-content:space-between; align-items:center; gap:20px; }
-    .code { color:var(--bread); font:900 48px/1 monospace; letter-spacing:.08em; } .code small { font:12px sans-serif; color:var(--muted);
+    .code { color:var(--crust); font:900 48px/1 monospace; letter-spacing:.08em; } .code small { font:12px sans-serif; color:var(--muted);
       display:block; letter-spacing:.1em; margin-bottom:8px; } .players { margin:25px 0; display:grid; gap:8px; }
     .player { padding:13px 15px; border:1px solid var(--line); border-radius:12px; display:flex; justify-content:space-between; }
     .score { color:var(--lime); font-weight:800; } .game-layout { display:grid; grid-template-columns:1.3fr .7fr; gap:18px; }
-    .audio-box { text-align:center; padding:45px 20px; background:#141510; border-radius:16px; margin:20px 0; }
-    .wave { font-size:45px; letter-spacing:8px; color:var(--lime); animation:pulse 1.2s ease-in-out infinite alternate; }
+    .audio-box { text-align:center; padding:45px 20px; background:#ffe3a2; border:2px dashed var(--bread); border-radius:16px; margin:20px 0; }
+    .wave { font-size:45px; letter-spacing:8px; color:var(--orange); animation:pulse 1.2s ease-in-out infinite alternate; }
     @keyframes pulse { from { opacity:.35; transform:scaleY(.75); } to { opacity:1; transform:scaleY(1.05); } }
     .timer { color:var(--orange); font-weight:800; font-size:20px; } .answer-row { display:flex; gap:10px; }
     .answer-row input { flex:1; } .answer-row button { white-space:nowrap; } .feed { margin-top:18px; color:var(--muted); font-size:14px; }
-    .feed b { color:var(--ink); } .status { color:var(--lime); min-height:25px; margin-top:14px; }
+    .feed b { color:var(--crust); } .status { color:var(--orange); min-height:25px; margin-top:14px; }
     @media(max-width:700px) { main { padding-top:22px; } header { margin-bottom:44px; } .grid,.game-layout { grid-template-columns:1fr; }
       .card { padding:21px; } .code { font-size:38px; } }
   </style>
 </head>
 <body>
 <main>
-  <header><div class="brand">sound<span>bite</span></div><div class="pill">music • speed • points</div></header>
+  <header><div class="brand">🍞 sound<span>bite</span></div><div class="pill">fresh from the oven</div></header>
   <section id="home">
-    <div class="hero"><h1>Hear it.<br><em>Claim it.</em></h1><p>Play the first seconds of a song. Be the quickest to name it and climb the scoreboard.</p></div>
+    <div class="hero"><div class="eyebrow">a toasted music guessing game</div><h1>Hear it.<br><em>Claim it.</em></h1><p>Play the first seconds of a song. Be the quickest to name it and climb the scoreboard.</p></div>
     <div class="grid">
       <form class="card" id="host-form"><h2>Host a lobby</h2><p>Start a room and invite your friends.</p>
         <label for="host-name">Your name</label><input id="host-name" maxlength="24" placeholder="DJ Nova" required>
