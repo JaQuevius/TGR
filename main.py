@@ -1,391 +1,288 @@
-"""Soundbite - a small, dependency-free party game server.
+"""Soundbite Server - Server-authoritative music party game.
 
-Run with ``python main.py`` and open http://localhost:8000 in a browser.
+Standard library Python only.
+Serves static assets, handles audio streaming (including Range requests for iOS Safari),
+and routes game state APIs.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
-import base64
-import io
+import os
 import re
-import secrets
-import threading
-import time
-import uuid
-import wave
+import socket
+import sys
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
+import game
+import library
 
-PORT = 8000
-CODE_PATTERN = re.compile(r"^\d{4}$")
-ROUND_LENGTH_SECONDS = 12
+DEFAULT_PORT = 8000
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-
-def make_demo_clip(frequencies: tuple[int, ...]) -> str:
-    """Create a tiny, dependency-free demo clip for the built-in library."""
-    sample_rate = 8000
-    frames = bytearray()
-    for frequency in frequencies:
-        for sample in range(sample_rate // 2):
-            value = int(9000 * ((sample % max(1, sample_rate // frequency)) / max(1, sample_rate // frequency) - 0.5))
-            frames.extend(value.to_bytes(2, "little", signed=True))
-    buffer = io.BytesIO()
-    with wave.open(buffer, "wb") as clip:
-        clip.setnchannels(1)
-        clip.setsampwidth(2)
-        clip.setframerate(sample_rate)
-        clip.writeframes(frames)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:audio/wav;base64,{encoded}"
-
-
-TRACK_LIBRARY = [
-    {"id": "sunrise", "title": "Sunrise on Sourdough", "artist": "The Loafers", "audio": make_demo_clip((392, 523, 659))},
-    {"id": "midnight", "title": "Midnight at the Bakery", "artist": "Crumb Club", "audio": make_demo_clip((330, 440, 554))},
-    {"id": "jams", "title": "Jam on Toast", "artist": "Butter & Beats", "audio": make_demo_clip((262, 330, 392))},
-]
-
-
-class GameStore:
-    """Thread-safe in-memory lobby and round state."""
-
-    def __init__(self) -> None:
-        self._games: dict[str, dict[str, Any]] = {}
-        self._lock = threading.Lock()
-
-    def create_game(self, name: str) -> tuple[str, str]:
-        with self._lock:
-            while True:
-                code = f"{secrets.randbelow(10000):04d}"
-                if code not in self._games:
-                    break
-            host_id = uuid.uuid4().hex
-            self._games[code] = {
-                "host_id": host_id,
-                "players": {
-                    host_id: {"id": host_id, "name": name, "score": 0}
-                },
-                "round": None,
-            }
-            return code, host_id
-
-    def join_game(self, code: str, name: str) -> str:
-        with self._lock:
-            game = self._games.get(code)
-            if game is None:
-                raise ValueError("That lobby code does not exist.")
-            if game["round"] is not None:
-                raise ValueError("This game has already started.")
-            player_id = uuid.uuid4().hex
-            game["players"][player_id] = {
-                "id": player_id,
-                "name": name,
-                "score": 0,
-            }
-            return player_id
-
-    def snapshot(self, code: str) -> dict[str, Any]:
-        with self._lock:
-            game = self._games.get(code)
-            if game is None:
-                raise ValueError("That lobby no longer exists.")
-            round_state = game["round"]
-            if round_state:
-                elapsed = time.monotonic() - round_state["started_at"]
-                if elapsed > ROUND_LENGTH_SECONDS and round_state["status"] == "playing":
-                    round_state["status"] = "finished"
-            players = sorted(
-                game["players"].values(),
-                key=lambda player: (-player["score"], player["name"].lower()),
-            )
-            public_round = None
-            if round_state:
-                public_round = {
-                    "status": round_state["status"],
-                    "audio": round_state["audio"],
-                    "duration": round_state["duration"],
-                    "started_at": round_state["started_at"],
-                    "elapsed": max(0, elapsed),
-                    "answers": round_state["answers"],
-                    "winner": round_state["winner"],
-                }
-            return {"players": players, "round": public_round}
-
-    def start_round(
-        self,
-        code: str,
-        player_id: str,
-        track_id: str,
-    ) -> None:
-        with self._lock:
-            game = self._get_game_for_player(code, player_id)
-            if game["host_id"] != player_id:
-                raise ValueError("Only the host can start a round.")
-            track = next((item for item in TRACK_LIBRARY if item["id"] == track_id), None)
-            if track is None:
-                raise ValueError("Choose a song from the library.")
-            game["round"] = {
-                "answer": normalize(track["title"]),
-                "title": track["title"],
-                "audio": track["audio"],
-                "duration": ROUND_LENGTH_SECONDS,
-                "started_at": time.monotonic(),
-                "status": "playing",
-                "answers": [],
-                "winner": None,
-            }
-
-    def submit_answer(self, code: str, player_id: str, answer: str) -> dict[str, Any]:
-        with self._lock:
-            game = self._get_game_for_player(code, player_id)
-            round_state = game["round"]
-            if not round_state or round_state["status"] != "playing":
-                raise ValueError("There is no active round.")
-            if time.monotonic() - round_state["started_at"] > ROUND_LENGTH_SECONDS:
-                round_state["status"] = "finished"
-                raise ValueError("Time is up.")
-            if any(item["player_id"] == player_id for item in round_state["answers"]):
-                raise ValueError("You already answered this round.")
-            if normalize(answer) != round_state["answer"]:
-                raise ValueError("Not quite - keep trying.")
-
-            placement = len(round_state["answers"])
-            points = max(40, 100 - placement * 20)
-            game["players"][player_id]["score"] += points
-            result = {
-                "player_id": player_id,
-                "name": game["players"][player_id]["name"],
-                "points": points,
-                "answer": answer.strip(),
-            }
-            round_state["answers"].append(result)
-            if round_state["winner"] is None:
-                round_state["winner"] = result
-            return result
-
-    def finish_round(self, code: str, player_id: str) -> None:
-        with self._lock:
-            game = self._get_game_for_player(code, player_id)
-            if game["host_id"] != player_id:
-                raise ValueError("Only the host can finish a round.")
-            if game["round"]:
-                game["round"]["status"] = "finished"
-
-    def _get_game_for_player(self, code: str, player_id: str) -> dict[str, Any]:
-        game = self._games.get(code)
-        if game is None or player_id not in game["players"]:
-            raise ValueError("Your player session is no longer valid.")
-        return game
-
-
-def normalize(value: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", value.lower())
-
-
-STORE = GameStore()
-
-
-PAGE = r"""<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Soundbite</title>
-  <style>
-    :root { --ink:#3b1d0b; --muted:#8b5a32; --bg:#fff1c9; --panel:#fff9e9;
-      --line:#d68b3c; --lime:#f7c331; --orange:#e56b2f; --bread:#c96d2d; --crust:#9c4f23; }
-    * { box-sizing:border-box; }
-    body { margin:0; background:radial-gradient(circle at 80% 5%,#ffd875 0,transparent 35%),var(--bg);
-      color:var(--ink); font:16px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; min-height:100vh; }
-    main { width:min(1040px,calc(100% - 32px)); margin:auto; padding:38px 0 64px; position:relative; }
-    main::after { content:"✦  ✧  ✦  ✧  ✦"; position:absolute; right:0; top:12px; color:#e4a33e; letter-spacing:13px; font-size:15px; }
-    header { display:flex; justify-content:space-between; align-items:center; margin-bottom:70px; }
-    .brand { font-weight:900; letter-spacing:-.06em; font-size:28px; color:var(--crust); }
-    .brand::first-letter { font-size:34px; } .brand span { color:var(--bread); } .pill { border:1px solid var(--line); padding:7px 12px;
-      border-radius:99px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.12em; }
-    .hero { max-width:700px; margin-bottom:44px; } .eyebrow { color:var(--bread); font-weight:900; text-transform:uppercase;
-      letter-spacing:.18em; font-size:12px; margin-bottom:17px; } h1 { font-size:clamp(48px,8vw,94px); letter-spacing:-.08em;
-      line-height:.9; margin:0 0 25px; } h1 em { color:var(--orange); font-style:normal; }
-    .hero p { color:var(--muted); font-size:19px; max-width:520px; }
-    .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
-    .card { background:rgba(255,249,233,.94); border:2px solid var(--line); border-radius:22px; padding:27px;
-      box-shadow:0 7px 0 rgba(156,79,35,.18); }
-    .card h2 { margin:0 0 6px; letter-spacing:-.04em; font-size:25px; color:var(--crust); } .card p { color:var(--muted); margin:0 0 23px; }
-    label { color:var(--muted); display:block; font-size:12px; text-transform:uppercase; letter-spacing:.1em; margin:16px 0 7px; }
-    input,select,button { font:inherit; border-radius:11px; }     input,select { width:100%; padding:13px 14px; border:1px solid var(--line);
-      background:#fffdf5; color:var(--ink); outline:none; } input:focus,select:focus { border-color:var(--orange); }
-    button { border:0; padding:13px 17px; font-weight:800; cursor:pointer; background:var(--lime); color:var(--ink);
-      box-shadow:0 3px 0 #d59d1b; } button.secondary { background:transparent; color:var(--crust); border:1px solid var(--line); box-shadow:none; } button:disabled { opacity:.45; cursor:not-allowed; }
-    .wide { width:100%; margin-top:20px; } .error { color:var(--orange); min-height:23px; margin-top:12px; font-size:14px; }
-    .hidden { display:none !important; } .topline { display:flex; justify-content:space-between; align-items:center; gap:20px; }
-    .code { color:var(--crust); font:900 48px/1 monospace; letter-spacing:.08em; } .code small { font:12px sans-serif; color:var(--muted);
-      display:block; letter-spacing:.1em; margin-bottom:8px; } .players { margin:25px 0; display:grid; gap:8px; }
-    .player { padding:13px 15px; border:1px solid var(--line); border-radius:12px; display:flex; justify-content:space-between; }
-    .score { color:var(--lime); font-weight:800; } .game-layout { display:grid; grid-template-columns:1.3fr .7fr; gap:18px; }
-    .audio-box { text-align:center; padding:45px 20px; background:#ffe3a2; border:2px dashed var(--bread); border-radius:16px; margin:20px 0; }
-    .wave { font-size:45px; letter-spacing:8px; color:var(--orange); animation:pulse 1.2s ease-in-out infinite alternate; }
-    @keyframes pulse { from { opacity:.35; transform:scaleY(.75); } to { opacity:1; transform:scaleY(1.05); } }
-    .timer { color:var(--orange); font-weight:800; font-size:20px; } .answer-row { display:flex; gap:10px; }
-    .answer-row input { flex:1; } .answer-row button { white-space:nowrap; } .feed { margin-top:18px; color:var(--muted); font-size:14px; }
-    .feed b { color:var(--crust); } .status { color:var(--orange); min-height:25px; margin-top:14px; }
-    @media(max-width:700px) { main { padding-top:22px; } header { margin-bottom:44px; } .grid,.game-layout { grid-template-columns:1fr; }
-      .card { padding:21px; } .code { font-size:38px; } }
-  </style>
-</head>
-<body>
-<main>
-  <header><div class="brand">🍞 sound<span>bite</span></div><div class="pill">fresh from the oven</div></header>
-  <section id="home">
-    <div class="hero"><div class="eyebrow">a toasted music guessing game</div><h1>Hear it.<br><em>Claim it.</em></h1><p>Play the first seconds of a song. Be the quickest to name it and climb the scoreboard.</p></div>
-    <div class="grid">
-      <form class="card" id="host-form"><h2>Host a lobby</h2><p>Start a room and invite your friends.</p>
-        <label for="host-name">Your name</label><input id="host-name" maxlength="24" placeholder="DJ Nova" required>
-        <button class="wide">Create lobby <span>→</span></button><div class="error" id="host-error"></div>
-      </form>
-      <form class="card" id="join-form"><h2>Join a lobby</h2><p>Enter the four-digit code from your host.</p>
-        <label for="join-name">Your name</label><input id="join-name" maxlength="24" placeholder="Your name" required>
-        <label for="join-code">Lobby code</label><input id="join-code" inputmode="numeric" pattern="\d{4}" maxlength="4" placeholder="0000" required>
-        <button class="wide">Join game <span>→</span></button><div class="error" id="join-error"></div>
-      </form>
-    </div>
-  </section>
-  <section id="lobby" class="hidden">
-    <div class="topline"><div><div class="code"><small>lobby code</small><span id="lobby-code"></span></div></div><button class="secondary" onclick="leaveGame()">Leave lobby</button></div>
-    <div class="grid" style="margin-top:30px"><div class="card"><h2>Players <span id="player-count"></span></h2><p>Share the code, then get ready.</p><div class="players" id="players"></div></div>
-      <div class="card" id="host-controls"><h2>Pick a slice</h2><p>Choose a track from the bread library.</p>
-        <label for="track-select">Song library</label><select id="track-select"></select>
-        <button class="wide" id="start-round">Serve soundbite <span>▶</span></button><div class="error" id="round-error"></div>
-      </div>
-      <div class="card hidden" id="waiting"><h2>You're in.</h2><p>Wait for the host to start the next soundbite.</p><div class="wave">♪ ♫ ♪</div></div>
-    </div>
-  </section>
-  <section id="game" class="hidden">
-    <div class="topline"><div><div class="pill">lobby <span id="game-code"></span></div></div><div class="timer" id="timer"></div></div>
-    <div class="game-layout" style="margin-top:18px"><div class="card"><h2 id="round-heading">Name that sound</h2><div class="audio-box"><div class="wave">♪ ♫ ♪</div><audio id="audio" controls></audio></div>
-      <form class="answer-row" id="answer-form"><input id="answer" placeholder="Type the song name..." autocomplete="off" required><button>Answer</button></form>
-      <div class="status" id="answer-status"></div><div class="feed" id="answer-feed"></div></div>
-      <div class="card"><h2>Scoreboard</h2><div class="players" id="game-players"></div></div>
-    </div>
-  </section>
-</main>
-<script>
-let session = null, poller = null, lastRound = null;
-const $ = id => document.getElementById(id);
-function show(id) { ["home","lobby","game"].forEach(x => $(x).classList.toggle("hidden", x !== id)); }
-async function api(path, options = {}) {
-  const response = await fetch(path, {headers: {"Content-Type":"application/json"}, ...options});
-  const data = await response.json(); if (!response.ok) throw new Error(data.error || "Something went wrong."); return data;
+# Explicit MIME mappings to avoid Windows registry quirks with .js
+MIME_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".wav": "audio/wav",
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
 }
-function setSession(code, playerId, host) { session = {code, playerId, host}; localStorage.setItem("soundbite-session", JSON.stringify(session)); }
-function error(id, message) { $(id).textContent = message; }
-async function enterLobby() { show("lobby"); $("lobby-code").textContent = session.code; $("game-code").textContent = session.code; $("host-controls").classList.toggle("hidden", !session.host); $("waiting").classList.toggle("hidden", session.host); if (session.host) await loadLibrary(); await refresh(); poller = setInterval(refresh, 900); }
-async function loadLibrary() { try { const tracks = await api("/api/library"); $("track-select").innerHTML = tracks.map(track => `<option value="${track.id}">${escapeHtml(track.title)} — ${escapeHtml(track.artist)}</option>`).join(""); } catch(e) { error("round-error",e.message); } }
-async function refresh() {
-  if (!session) return;
-  try { const state = await api(`/api/game/${session.code}`); renderPlayers(state.players, "players"); renderPlayers(state.players, "game-players");
-    $("player-count").textContent = `(${state.players.length})`;
-    if (state.round && state.round.status === "playing") { if (!lastRound || lastRound.started_at !== state.round.started_at) { lastRound = state.round; show("game"); $("audio").src = state.round.audio; $("audio").play().catch(()=>{}); } renderRound(state.round); }
-    else if (state.round && state.round.status === "finished" && lastRound) renderRound(state.round);
-  } catch (e) { error("join-error", e.message); }
-}
-function renderPlayers(players, target) { if (!$(target)) return; $(target).innerHTML = players.map((p,i) => `<div class="player"><span>${i===0 && p.score ? "🏆 " : ""}${escapeHtml(p.name)}</span><span class="score">${p.score} pts</span></div>`).join(""); }
-function renderRound(round) {
-  $("round-heading").textContent = round.title || "Name that sound";
-  $("timer").textContent = round.status === "playing" ? `${Math.max(0, Math.ceil(round.duration-round.elapsed))}s left` : "Round over";
-  $("answer").disabled = round.status !== "playing"; $("answer-form").querySelector("button").disabled = round.status !== "playing";
-  $("answer-feed").innerHTML = round.answers.map(a => `<div>⚡ <b>${escapeHtml(a.name)}</b> got it (+${a.points})</div>`).join("");
-  if (round.winner) $("answer-status").textContent = `${round.winner.name} was first!`;
-}
-function escapeHtml(value) { return value.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c])); }
-$("host-form").onsubmit = async e => { e.preventDefault(); error("host-error",""); try { const d = await api("/api/host", {method:"POST",body:JSON.stringify({name:$("host-name").value})}); setSession(d.code,d.player_id,true); enterLobby(); } catch(e) { error("host-error",e.message); } };
-$("join-form").onsubmit = async e => { e.preventDefault(); error("join-error",""); try { const d = await api("/api/join", {method:"POST",body:JSON.stringify({code:$("join-code").value,name:$("join-name").value})}); setSession(d.code,d.player_id,false); enterLobby(); } catch(e) { error("join-error",e.message); } };
-$("start-round").onclick = async () => { error("round-error",""); try { await api(`/api/game/${session.code}/round`, {method:"POST",body:JSON.stringify({player_id:session.playerId,track_id:$("track-select").value})}); } catch(e) { error("round-error",e.message); } };
-$("answer-form").onsubmit = async e => { e.preventDefault(); $("answer-status").textContent = ""; try { const d = await api(`/api/game/${session.code}/answer`, {method:"POST",body:JSON.stringify({player_id:session.playerId,answer:$("answer").value})}); $("answer-status").textContent = `Correct! +${d.points} points`; $("answer").value = ""; } catch(e) { $("answer-status").textContent = e.message; } };
-function leaveGame() { clearInterval(poller); session=null; lastRound=null; localStorage.removeItem("soundbite-session"); show("home"); }
-const saved = JSON.parse(localStorage.getItem("soundbite-session") || "null"); if (saved) { session=saved; enterLobby(); }
-</script>
-</body>
-</html>"""
+
+STORE = game.GameStore()
 
 
-class Handler(BaseHTTPRequestHandler):
+def get_lan_ip() -> str:
+    """Best effort discovery of host LAN IP for mobile browser testing."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
+class SoundbiteHandler(BaseHTTPRequestHandler):
+    server_version = "Soundbite/2.0"
+
     def log_message(self, format: str, *args: Any) -> None:
-        return
+        # Suppress routine HTTP logs unless in verbose debugging
+        if os.environ.get("SOUNDBITE_DEBUG"):
+            super().log_message(format, *args)
+
+    def do_HEAD(self) -> None:
+        self.do_GET()
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
-        if parsed.path == "/":
-            body = PAGE.encode()
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
+        path = parsed.path
+
+        # 1. API: Server epoch time
+        if path == "/api/time":
+            self._send_json({"server_time": STORE.now()})
             return
-        if parsed.path == "/api/library":
-            self._send_json(
-                [
-                    {"id": track["id"], "title": track["title"], "artist": track["artist"]}
-                    for track in TRACK_LIBRARY
-                ]
-            )
+
+        # 2. API: Track library metadata (IDs and names only, NO answers)
+        if path == "/api/library":
+            self._send_json(library.get_playlists_catalog())
             return
-        if parsed.path.startswith("/api/game/"):
+
+        # 3. API: Game snapshot
+        if path.startswith("/api/game/"):
+            code = path[len("/api/game/") :].strip("/")
+            if not game.CODE_PATTERN.fullmatch(code):
+                self._send_error("Invalid lobby code format.", HTTPStatus.BAD_REQUEST)
+                return
+
+            token = self.headers.get("X-Player-Token", "").strip()
+            if not token:
+                self._send_error("Missing X-Player-Token header.", HTTPStatus.UNAUTHORIZED)
+                return
+
             try:
-                code = parsed.path.rsplit("/", 1)[-1]
-                self._send_json(STORE.snapshot(code))
-            except ValueError as exc:
-                self._send_error(str(exc))
+                snapshot_data = STORE.snapshot(code, token)
+                self._send_json(snapshot_data)
+            except KeyError:
+                self._send_error("lobby_gone", HTTPStatus.NOT_FOUND)
+            except PermissionError:
+                self._send_error("bad_token", HTTPStatus.UNAUTHORIZED)
+            except Exception as exc:
+                self._send_error(str(exc), HTTPStatus.BAD_REQUEST)
             return
-        self._send_error("Not found.", HTTPStatus.NOT_FOUND)
+
+        # 4. Audio Streaming Endpoint: /audio/<id>
+        if path.startswith("/audio/"):
+            audio_id = path[len("/audio/") :].strip("/")
+            self._serve_audio(audio_id)
+            return
+
+        # 5. Static File Routing
+        self._serve_static(path)
 
     def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        path = parsed.path
+
         try:
-            payload = self._payload()
-            path = urlparse(self.path).path
+            payload = self._parse_json_payload()
+
+            # Host a new lobby
             if path == "/api/host":
-                name = clean_name(payload.get("name"))
-                code, player_id = STORE.create_game(name)
-                self._send_json({"code": code, "player_id": player_id})
-            elif path == "/api/join":
+                name = payload.get("name", "")
+                code, pid, token = STORE.create_game(name)
+                self._send_json({"code": code, "pid": pid, "token": token})
+                return
+
+            # Join an existing lobby
+            if path == "/api/join":
                 code = str(payload.get("code", "")).strip()
-                if not CODE_PATTERN.fullmatch(code):
-                    raise ValueError("Enter a four-digit lobby code.")
-                name = clean_name(payload.get("name"))
-                self._send_json({"code": code, "player_id": STORE.join_game(code, name)})
-            else:
-                match = re.fullmatch(r"/api/game/(\d{4})/(round|answer|finish)", path)
-                if not match:
-                    self._send_error("Not found.", HTTPStatus.NOT_FOUND)
+                if not game.CODE_PATTERN.fullmatch(code):
+                    raise ValueError("Enter a valid four-digit lobby code.")
+                name = payload.get("name", "")
+                code, pid, token = STORE.join_game(code, name)
+                self._send_json({"code": code, "pid": pid, "token": token})
+                return
+
+            # Match /api/game/<code>/<action>
+            match = re.fullmatch(r"/api/game/(\d{4})/(round|buzz|answer|finish|leave)", path)
+            if not match:
+                self._send_error("Not found.", HTTPStatus.NOT_FOUND)
+                return
+
+            code, action = match.groups()
+            token = self.headers.get("X-Player-Token", "").strip()
+            if not token:
+                self._send_error("Missing X-Player-Token header.", HTTPStatus.UNAUTHORIZED)
+                return
+
+            if action == "round":
+                mode = str(payload.get("mode", "buzzer"))
+                playlist_id = str(payload.get("playlist_id", ""))
+                res = STORE.start_round(code, token, mode, playlist_id)
+                self._send_json(res)
+            elif action == "buzz":
+                round_id = str(payload.get("round_id", ""))
+                buzz_id = str(payload.get("buzz_id", ""))
+                client_ts = int(payload.get("ts", STORE.now()))
+                res = STORE.submit_buzz(code, token, round_id, buzz_id, client_ts)
+                self._send_json(res)
+            elif action == "answer":
+                round_id = str(payload.get("round_id", ""))
+                answer_id = str(payload.get("answer_id", ""))
+                answer_text = str(payload.get("answer", ""))
+                client_ts = int(payload.get("ts", STORE.now()))
+                res = STORE.submit_answer(code, token, round_id, answer_id, answer_text, client_ts)
+                self._send_json(res)
+            elif action == "finish":
+                res = STORE.finish_round(code, token)
+                self._send_json(res)
+            elif action == "leave":
+                res = STORE.leave_game(code, token)
+                self._send_json(res)
+
+        except KeyError:
+            self._send_error("lobby_gone", HTTPStatus.NOT_FOUND)
+        except PermissionError:
+            self._send_error("bad_token", HTTPStatus.UNAUTHORIZED)
+        except (ValueError, TypeError) as exc:
+            self._send_error(str(exc), HTTPStatus.BAD_REQUEST)
+        except Exception as exc:
+            self._send_error(str(exc), HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    # -------------------------------------------------------------------------
+    # Static & Audio Serving
+    # -------------------------------------------------------------------------
+
+    def _serve_static(self, path: str) -> None:
+        """Serves files from STATIC_DIR with path traversal defense and explicit MIME types."""
+        rel_path = path.lstrip("/")
+        if not rel_path or rel_path == "":
+            rel_path = "index.html"
+
+        # Safe path resolution
+        full_path = os.path.abspath(os.path.join(STATIC_DIR, rel_path))
+        if os.path.commonpath([STATIC_DIR, full_path]) != STATIC_DIR:
+            self._send_error("Forbidden.", HTTPStatus.FORBIDDEN)
+            return
+
+        if not os.path.isfile(full_path):
+            self._send_error("Not found.", HTTPStatus.NOT_FOUND)
+            return
+
+        ext = os.path.splitext(full_path)[1].lower()
+        content_type = MIME_TYPES.get(ext, "application/octet-stream")
+
+        try:
+            with open(full_path, "rb") as f:
+                body = f.read()
+
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            # No-cache for client code to ensure fresh updates
+            self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            self.end_headers()
+            self.wfile.write(body)
+        except Exception as exc:
+            self._send_error(f"Error reading file: {exc}", HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    def _serve_audio(self, audio_id: str) -> None:
+        """Serves audio bytes supporting HTTP 206 Range requests for iOS Safari."""
+        # 1. Check in-memory store first
+        audio_bytes = library.get_audio_bytes(audio_id)
+
+        # 2. Check static/audio/<audio_id> on disk
+        if not audio_bytes:
+            for ext in (".wav", ".mp3", ".ogg"):
+                candidate = os.path.join(STATIC_DIR, "audio", f"{audio_id}{ext}")
+                if os.path.isfile(candidate):
+                    with open(candidate, "rb") as f:
+                        audio_bytes = f.read()
+                    break
+
+        if not audio_bytes:
+            self._send_error("Audio clip not found.", HTTPStatus.NOT_FOUND)
+            return
+
+        total_len = len(audio_bytes)
+        range_header = self.headers.get("Range")
+
+        if range_header:
+            match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+            if match:
+                start = int(match.group(1))
+                end = int(match.group(2)) if match.group(2) else total_len - 1
+                if start < total_len and end < total_len and start <= end:
+                    chunk = audio_bytes[start : end + 1]
+                    self.send_response(HTTPStatus.PARTIAL_CONTENT)
+                    self.send_header("Content-Type", "audio/wav")
+                    self.send_header("Content-Range", f"bytes {start}-{end}/{total_len}")
+                    self.send_header("Content-Length", str(len(chunk)))
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+                    self.end_headers()
+                    self.wfile.write(chunk)
                     return
-                code, action = match.groups()
-                player_id = str(payload.get("player_id", ""))
-                if action == "round":
-                    STORE.start_round(code, player_id, str(payload.get("track_id", "")))
-                    self._send_json({"ok": True})
-                elif action == "answer":
-                    self._send_json(STORE.submit_answer(code, player_id, str(payload.get("answer", ""))))
-                else:
-                    STORE.finish_round(code, player_id)
-                    self._send_json({"ok": True})
-        except (ValueError, TypeError, json.JSONDecodeError) as exc:
-            self._send_error(str(exc))
 
-    def _payload(self) -> dict[str, Any]:
+        # Normal full 200 response
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Length", str(total_len))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        self.end_headers()
+        self.wfile.write(audio_bytes)
+
+    # -------------------------------------------------------------------------
+    # Protocol Utilities
+    # -------------------------------------------------------------------------
+
+    def _parse_json_payload(self) -> Dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
-        if length > 12_000_000:
-            raise ValueError("That audio clip is too large.")
-        return json.loads(self.rfile.read(length) or b"{}")
+        if length > 1_000_000:
+            raise ValueError("Payload too large.")
+        raw = self.rfile.read(length) if length > 0 else b"{}"
+        return json.loads(raw.decode("utf-8") or "{}")
 
-    def _send_json(self, payload: dict[str, Any], status: HTTPStatus = HTTPStatus.OK) -> None:
-        body = json.dumps(payload).encode()
+    def _send_json(self, payload: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
+        body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
-        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.end_headers()
         self.wfile.write(body)
 
@@ -393,19 +290,31 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"error": message}, status)
 
 
-def clean_name(value: Any) -> str:
-    name = str(value or "").strip()
-    if not name:
-        raise ValueError("Enter a name first.")
-    return name[:24]
+def run_server(port: int = DEFAULT_PORT) -> None:
+    lan_ip = get_lan_ip()
+    server = ThreadingHTTPServer(("0.0.0.0", port), SoundbiteHandler)
 
+    print("🍞 ========================================================")
+    print("🍞 Soundbite Party Game Server is running!")
+    print(f"🍞 Local URL: http://localhost:{port}")
+    print(f"🍞 Phone LAN: http://{lan_ip}:{port}")
+    print("🍞 ========================================================")
 
-if __name__ == "__main__":
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
-    print(f"Soundbite is running at http://localhost:{PORT}")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping Soundbite.")
+        print("\nStopping Soundbite server.")
     finally:
         server.server_close()
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Soundbite Server")
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.environ.get("PORT", str(DEFAULT_PORT))),
+        help="Port to listen on (default 8000 or env PORT)",
+    )
+    args = parser.parse_args()
+    run_server(args.port)
