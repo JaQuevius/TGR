@@ -77,6 +77,12 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
             self._send_json({"server_time": STORE.now()})
             return
 
+        # API: Phone LAN link, so the lobby QR code works even if the host opened localhost
+        if path == "/api/join-link":
+            port = self.server.server_address[1]
+            self._send_json({"url": f"http://{get_lan_ip()}:{port}"})
+            return
+
         # 2. API: Track library metadata (IDs and names only, NO answers)
         if path == "/api/library":
             self._send_json(library.get_playlists_catalog())

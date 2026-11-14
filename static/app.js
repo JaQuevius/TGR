@@ -805,8 +805,16 @@ function startLocalDemo(name) {
   enterLobby();
 }
 
-function renderJoinQr() {
-  const link = `${location.origin}/?code=${session.code}`;
+async function renderJoinQr() {
+  // Always point the QR code at the Phone LAN address, even if this page was opened via localhost.
+  let origin = location.origin;
+  try {
+    const resp = await fetch('/api/join-link');
+    if (resp.ok) origin = (await resp.json()).url || origin;
+  } catch (err) {
+    // Fall back to the current page's address.
+  }
+  const link = `${origin}/?code=${session.code}`;
   const qr = qrcode(0, 'M');
   qr.addData(link);
   qr.make();
