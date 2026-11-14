@@ -4,27 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Soundbite — toasted music guessing</title>
-  <style>
-    :root{--ink:#3b1d0b;--muted:#8b5a32;--bg:#fff1c9;--panel:#fff9e9;--line:#d68b3c;--yellow:#f7c331;--orange:#e56b2f;--crust:#9c4f23}
-    *{box-sizing:border-box}body{margin:0;color:var(--ink);font:16px/1.45 system-ui,sans-serif;background:radial-gradient(circle at 85% 4%,#ffd875 0,transparent 35%),var(--bg)}
-    main{width:min(1040px,calc(100% - 32px));margin:auto;padding:35px 0 70px}
-    header{display:flex;justify-content:space-between;align-items:center;margin-bottom:70px}.brand{font-size:28px;font-weight:900;letter-spacing:-.06em;color:var(--crust)}
-    .brand span{color:var(--orange)}.badge{border:1px solid var(--line);border-radius:99px;padding:7px 12px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.12em}
-    .eyebrow{color:var(--crust);font-size:12px;font-weight:900;letter-spacing:.18em;text-transform:uppercase;margin-bottom:16px}
-    h1{font-size:clamp(52px,8vw,95px);letter-spacing:-.08em;line-height:.9;margin:0 0 25px}h1 em{color:var(--orange);font-style:normal}
-    h2{color:var(--crust);letter-spacing:-.04em;margin:0 0 6px}.hero{max-width:700px;margin-bottom:43px}.hero p,.card p{color:var(--muted)}
-    .grid,.game{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.game{grid-template-columns:1.3fr .7fr}
-    .card{background:rgba(255,249,233,.94);border:2px solid var(--line);border-radius:22px;padding:27px;box-shadow:0 7px 0 rgba(156,79,35,.18)}
-    label{display:block;color:var(--muted);font-size:12px;letter-spacing:.1em;text-transform:uppercase;margin:16px 0 7px}
-    input,select,button{width:100%;font:inherit;border-radius:11px;padding:13px 14px}input,select{border:1px solid var(--line);background:#fffdf5;color:var(--ink)}
-    button{border:0;background:var(--yellow);color:var(--ink);font-weight:800;cursor:pointer;box-shadow:0 3px 0 #d59d1b;margin-top:20px}
-    button.secondary{background:transparent;border:1px solid var(--line);box-shadow:none;color:var(--crust);width:auto;margin:0}.error{color:var(--orange);min-height:23px;margin-top:10px}
-    .hidden{display:none!important}.topline{display:flex;justify-content:space-between;align-items:center;gap:20px}.code{font:900 48px/1 monospace;color:var(--crust)}.code small{display:block;font:12px system-ui;color:var(--muted);letter-spacing:.1em;margin-bottom:8px}
-    .players{display:grid;gap:8px;margin:25px 0}.player{display:flex;justify-content:space-between;border:1px solid var(--line);border-radius:12px;padding:13px 15px}.score{color:var(--orange);font-weight:800}
-    .audio{background:#ffe3a2;border:2px dashed var(--orange);border-radius:16px;padding:16px;text-align:center;margin:20px 0}.audio iframe{width:100%;height:220px;border:0;border-radius:10px}.wave{font-size:45px;letter-spacing:8px;color:var(--orange);animation:pulse 1.2s ease-in-out infinite alternate}@keyframes pulse{to{opacity:.35;transform:scaleY(.75)}}
-    .buzzer{font-size:22px;background:var(--orange);color:#fff8e7;box-shadow:0 4px 0 #ad431f}.buzzer:disabled{background:#d7b78a;box-shadow:none}.answer{display:flex;gap:10px}.answer input{flex:1}.answer button{width:auto;margin:0;white-space:nowrap}.status{color:var(--orange);min-height:25px;margin-top:14px}.feed{color:var(--muted);font-size:14px;margin-top:18px}.timer{color:var(--orange);font-weight:800}
-    @media(max-width:700px){header{margin-bottom:45px}.grid,.game{grid-template-columns:1fr}.card{padding:21px}.code{font-size:38px}}
-  </style>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <main>
@@ -36,7 +16,7 @@
       <form class="card" id="join-form"><h2>Join a lobby</h2><p>Enter the four-digit code from your host.</p><label for="join-name">Your name</label><input id="join-name" placeholder="Your name" required><label for="join-code">Lobby code</label><input id="join-code" inputmode="numeric" maxlength="4" placeholder="0000" required><button>Join game →</button><div class="error" id="join-error"></div></form>
     </div>
   </section>
-  <section id="lobby" class="hidden"><div class="topline"><div class="code"><small>lobby code</small><span id="code"></span></div><button class="secondary" onclick="show('home')">Leave lobby</button></div>
+  <section id="lobby" class="hidden"><div class="topline"><div class="code"><small>lobby code</small><span id="code"></span></div><button class="secondary" id="leave">Leave lobby</button></div>
     <div class="grid" style="margin-top:30px"><div class="card"><h2>Players <span id="count"></span></h2><p>Static demo mode keeps everyone on this device.</p><div class="players" id="players"></div></div>
       <div class="card"><h2>Pick a playlist</h2><p>The game picks a surprise song for you.</p><label for="playlist">Song playlist</label><select id="playlist"></select><button id="start">Serve surprise ▶</button><div class="error" id="round-error"></div></div>
     </div>
@@ -45,42 +25,6 @@
     <div class="game" style="margin-top:18px"><div class="card"><h2 id="title">Name that sound</h2><div class="audio"><div id="player"><div class="wave">♪ ♫ ♪</div></div></div><button class="buzzer" id="buzz">🔔 BUZZ IN</button><form class="answer hidden" id="answer-form"><input id="answer" placeholder="Type the song name..." required><button>Submit answer</button></form><div class="status" id="status">Wait for the sound, then buzz when you know it.</div><div class="feed" id="feed"></div></div><div class="card"><h2>Scoreboard</h2><div class="players" id="scoreboard"></div></div></div>
   </section>
 </main>
-<script>
-const playlists=[
-  {name:"90s throwbacks",tracks:[
-    {title:"...Baby One More Time",artist:"Britney Spears",videoId:"C-u5WLJ9Yk4"},
-    {title:"Smells Like Teen Spirit",artist:"Nirvana",videoId:"hTWKbfoikeg"},
-    {title:"Wannabe",artist:"Spice Girls",videoId:"gJLIiF15wjQ"},
-    {title:"Waterfalls",artist:"TLC",videoId:"8WEtxJ4-sh4"}]},
-  {name:"2000s hits",tracks:[
-    {title:"Crazy in Love",artist:"Beyoncé",videoId:"ViwtNLUqkMY"},
-    {title:"Mr. Brightside",artist:"The Killers",videoId:"gGdGFtwoWP0"},
-    {title:"Since U Been Gone",artist:"Kelly Clarkson",videoId:"R7UrFYvl5TE"},
-    {title:"Yeah!",artist:"Usher ft. Lil Jon & Ludacris",videoId:"GxBSyx85Kp8"}]},
-  {name:"2010s anthems",tracks:[
-    {title:"Uptown Funk",artist:"Mark Ronson ft. Bruno Mars",videoId:"OPf0YbXqDm0"},
-    {title:"Rolling in the Deep",artist:"Adele",videoId:"rYEDA3JcQqw"},
-    {title:"Blinding Lights",artist:"The Weeknd",videoId:"4NRXx6U8ABQ"},
-    {title:"Royals",artist:"Lorde",videoId:"nlcIKh6sBtc"}]},
-  {name:"EDM party",tracks:[
-    {title:"Levels",artist:"Avicii",videoId:"_ovdm2yX4MA"},
-    {title:"Titanium",artist:"David Guetta ft. Sia",videoId:"JRfuAukYTKg"},
-    {title:"Don't You Worry Child",artist:"Swedish House Mafia",videoId:"1y6smkh6c-0"},
-    {title:"Wake Me Up",artist:"Avicii",videoId:"IcrbM1l_BoI"}]}
-];
-let state={code:"",host:"",currentPlayer:"",players:[],playlist:null,track:null,answers:[],started:0,buzzedBy:"",eliminated:[],finished:false};
-let pendingVideo=null;
-const $=id=>document.getElementById(id), show=id=>["home","lobby","game"].forEach(x=>$(x).classList.toggle("hidden",x!==id));
-const safe=s=>s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));
-function render(){ $("players").innerHTML=state.players.map(p=>`<div class="player">${safe(p.name)}<span class="score">${p.score} pts</span></div>`).join("");$("scoreboard").innerHTML=$("players").innerHTML;$("count").textContent=`(${state.players.length})`; }
-function loadVideo(track){pendingVideo=track;if(!track)return;const id=encodeURIComponent(track.videoId);$("player").innerHTML=`<iframe title="YouTube soundbite" src="https://www.youtube.com/embed/${id}?start=0&end=10&controls=1&rel=0&playsinline=1" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`}
-function setLibrary(){$("playlist").innerHTML=playlists.map((p,i)=>`<option value="${i}">${p.name}</option>`).join("")}
-$("host-form").onsubmit=e=>{e.preventDefault();state={code:String(Math.floor(1000+Math.random()*9000)),host:$("host-name").value,currentPlayer:$("host-name").value,players:[{name:$("host-name").value,score:0}],playlist:null,track:null,answers:[],started:0,buzzedBy:"",eliminated:[],finished:false};setLibrary();$("code").textContent=state.code;$("game-code").textContent=state.code;render();show("lobby")};
-$("join-form").onsubmit=e=>{e.preventDefault();if(!$("join-code").value.match(/^\d{4}$/))return $("join-error").textContent="Enter a four-digit code.";state.code=$("join-code").value;state.currentPlayer=$("join-name").value;state.players.push({name:state.currentPlayer,score:0});$("code").textContent=state.code;$("game-code").textContent=state.code;setLibrary();render();show("lobby")};
-$("start").onclick=()=>{state.playlist=playlists[+$("playlist").value];state.track=state.playlist.tracks[Math.floor(Math.random()*state.playlist.tracks.length)];state.answers=[];state.started=Date.now();state.buzzedBy="";state.eliminated=[];state.finished=false;$("title").textContent="Name that sound";$("status").textContent=`Playing a surprise from ${state.playlist.name}. Buzz when you know it.`;$("feed").textContent="";show("game");render();loadVideo(state.track);};
-$("buzz").onclick=()=>{if(!state.track||state.finished||state.buzzedBy||state.eliminated.includes(state.currentPlayer))return;state.buzzedBy=state.currentPlayer;$("status").textContent=`${state.currentPlayer} buzzed in — answer now!`;render()};
-$("answer-form").onsubmit=e=>{e.preventDefault();if(!state.track||state.buzzedBy!==state.currentPlayer||state.finished)return;const value=$("answer").value.trim().toLowerCase(),player=state.players.find(p=>p.name===state.currentPlayer);if(value!==state.track.title.toLowerCase()){player.score-=50;state.eliminated.push(state.currentPlayer);state.buzzedBy="";state.answers.push({name:state.currentPlayer,points:-50,wrong:true});$("status").textContent="Wrong answer: −50 points. You cannot buzz again this round.";$("feed").innerHTML=state.answers.map(a=>`⚡ <b>${safe(a.name)}</b> ${a.wrong?"missed":"got it"} (${a.points>0?"+":""}${a.points})`).join("<br>");$("answer").value="";render();return}const points=100;player.score+=points;state.answers.push({name:player.name,points});state.finished=true;$("status").textContent=`Correct! +${points} points`;$("feed").innerHTML=state.answers.map(a=>`⚡ <b>${safe(a.name)}</b> ${a.wrong?"missed":"got it"} (${a.points>0?"+":""}${a.points})`).join("<br>");render();$("answer").value=""};
-setInterval(()=>{if(state.started){const left=Math.max(0,12-Math.floor((Date.now()-state.started)/1000));$("timer").textContent=left?`${left}s left`:"Round over";if(!left)state.finished=true;const canBuzz=!state.finished&&!state.buzzedBy&&!state.eliminated.includes(state.currentPlayer);$("buzz").disabled=!canBuzz;$("answer-form").classList.toggle("hidden",state.buzzedBy!==state.currentPlayer||state.finished)}},250);
-</script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

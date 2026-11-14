@@ -30,6 +30,13 @@ has the same host, join, library, YouTube playback, and scoring flow, but state
 is local to the current browser. Real multiplayer across devices still
 requires the Python server in `main.py` (or a hosted backend).
 
+The static frontend is split by responsibility:
+
+- `index.html` — page structure and accessible form controls
+- `styles.css` — bakery theme and responsive layout
+- `game-data.js` — curated playlist and YouTube metadata
+- `app.js` — lobby, round, buzzer, scoring, and player interactions
+
 ## Authors
 
 Contributors names and contact info
