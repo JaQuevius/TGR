@@ -5,7 +5,7 @@
  * NTP clock sync, audio preloading, and server-authoritative buzzer racing.
  */
 
-import { initClock, syncClock, startClockSync, serverNow, getClockOffset, getLastRTT, absorbSnapshotTime } from './clock.js';
+import { syncClock, startClockSync, serverNow, getClockOffset, getLastRTT, absorbSnapshotTime } from './clock.js';
 import { Outbox, apiFetch, generateId, getConnectionState, onConnectionStateChange, debugConfig, setDebugOption } from './net.js';
 import { preloadAudio, schedulePlayback, stopAudio, isSoundMuted, setSoundMuted, unlockAudio, setOnAudioBlocked } from './audio.js';
 
@@ -21,6 +21,12 @@ let outbox = null;
 let pendingEarlyAnswer = null; // Stored if user types before floor is confirmed
 let currentRoundId = null;
 let hasBuzzedThisRound = false;
+const localPlaylists = [
+  { id: '90s', name: '90s throwbacks' },
+  { id: '2000s', name: '2000s hits' },
+  { id: '2010s', name: '2010s anthems' },
+  { id: 'edm', name: 'EDM party' },
+];
 
 // ---------------------------------------------------------------------------
 // Initialization & Session Management
@@ -143,7 +149,12 @@ async function api(path, options = {}) {
   const resp = await apiFetch(path, { ...options, headers });
   const t1 = performance.now();
 
-  const data = await resp.json();
+  let data = {};
+  try {
+    data = await resp.json();
+  } catch (err) {
+    if (resp.ok) throw new Error('The server returned an invalid response.');
+  }
 
   if (data.server_time) {
     absorbSnapshotTime(data.server_time, t0, t1);
@@ -162,7 +173,9 @@ async function api(path, options = {}) {
       $('join-error').textContent = 'Your session expired. Please rejoin.';
       throw new Error('Your session expired.');
     }
-    throw new Error(data.error || 'Server error');
+    const error = new Error(data.error || 'Server error');
+    error.status = resp.status;
+    throw error;
   }
 
   return data;
@@ -191,6 +204,7 @@ function stopPolling() {
 
 async function pollGame() {
   if (!session) return;
+  if (session.local) return;
   try {
     const snapshot = await api(`/api/game/${session.code}`);
     handleSnapshot(snapshot);
@@ -563,10 +577,14 @@ function setupDomListeners() {
         method: 'POST',
         body: JSON.stringify({ name }),
       });
-      setSession({ code: data.code, pid: data.pid, token: data.token, host: true, name });
+      setSession({ code: data.code, pid: data.pid || data.player_id, token: data.token || null, host: true, name });
       await enterLobby();
     } catch (err) {
-      $('host-error').textContent = err.message;
+      if (err instanceof TypeError || err.status === 404 || err.status === 405 || err.status === 501) {
+        startLocalDemo(name);
+      } else {
+        $('host-error').textContent = err.message;
+      }
     }
   };
 
@@ -582,7 +600,7 @@ function setupDomListeners() {
         method: 'POST',
         body: JSON.stringify({ code, name }),
       });
-      setSession({ code: data.code, pid: data.pid, token: data.token, host: false, name });
+      setSession({ code: data.code, pid: data.pid || data.player_id, token: data.token || null, host: false, name });
       await enterLobby();
     } catch (err) {
       $('join-error').textContent = err.message;
@@ -594,6 +612,10 @@ function setupDomListeners() {
     $('lobby-error').textContent = '';
     const mode = $('mode-select').value;
     const playlistId = $('playlist-select').value;
+    if (session.local) {
+      $('lobby-error').textContent = 'Local demo lobby created. Start the Python server for shared rounds across devices.';
+      return;
+    }
     try {
       const res = await api(`/api/game/${session.code}/round`, {
         method: 'POST',
@@ -646,19 +668,39 @@ async function enterLobby() {
     await loadPlaylists();
   }
 
+  if (session.local) {
+    const players = [{ pid: session.pid, name: session.name, score: 0, connected: true }];
+    handleSnapshot({ players, me: { pid: session.pid, host: true }, round: null });
+    return;
+  }
+
   await pollGame();
   scheduleNextPoll();
 }
 
 async function loadPlaylists() {
   try {
-    const playlists = await api('/api/library');
+    const playlists = session.local ? localPlaylists : await api('/api/library');
     $('playlist-select').innerHTML = playlists
       .map((pl) => `<option value="${escapeHtml(pl.id)}">${escapeHtml(pl.name)}</option>`)
       .join('');
   } catch (err) {
     $('lobby-error').textContent = err.message;
   }
+}
+
+function startLocalDemo(name) {
+  const code = String(Math.floor(1000 + Math.random() * 9000));
+  setSession({
+    code,
+    pid: generateId('local'),
+    token: null,
+    host: true,
+    name,
+    local: true,
+  });
+  $('host-error').textContent = '';
+  enterLobby();
 }
 
 function escapeHtml(str) {

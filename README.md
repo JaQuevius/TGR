@@ -148,6 +148,10 @@ python tests/verify_scenarios.py
 - [`static/app.js`](file:///c:/Users/richa/Durhack%202026/TGR/static/app.js): Main client controller and state coordinator.
 - [`tests/`](file:///c:/Users/richa/Durhack%202026/TGR/tests/): Test suite for python unit tests, HTTP tests, client tests, and scenario simulations.
 
+The browser frontend lives entirely in [`static/`](file:///c:/Users/richa/Durhack%202026/TGR/static/).
+Use that folder as the GitHub Pages publish directory; there is intentionally only
+one frontend entry point, [`static/index.html`](file:///c:/Users/richa/Durhack%202026/TGR/static/index.html).
+
 ---
 
 ## 👥 Authors
