@@ -87,12 +87,26 @@
           <option value="buzzer">Buzzer Mode (Buzz & claim floor)</option>
         </select>
 
+        <label for="audio-direction-select">Song direction</label>
+        <select id="audio-direction-select">
+          <option value="normal" selected>Normal</option>
+          <option value="reverse">Reversed</option>
+        </select>
+
         <label for="playlist-select">Song Library</label>
         <select id="playlist-select"></select>
 
         <button class="wide" id="btn-start-round">Serve soundbite <span>▶</span></button>
         <div class="error" id="lobby-error"></div>
       </div>
+
+      <form class="card" id="upload-form">
+        <h2>Add your own MP3</h2>
+        <p>Upload a song for everyone in this lobby to use.</p>
+        <input id="mp3-files" type="file" accept=".mp3,audio/mpeg" multiple>
+        <button class="wide" type="submit">Upload MP3s</button>
+        <div class="error" id="upload-status"></div>
+      </form>
 
       <!-- Player Waiting Card -->
       <div class="card hidden" id="waiting-card">
@@ -204,6 +218,6 @@
   </aside>
 </main>
 
-<script type="module" src="app.js?v=9"></script>
+<script type="module" src="app.js?v=10"></script>
 </body>
 </html>

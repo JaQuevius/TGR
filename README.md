@@ -45,8 +45,12 @@ On startup, the server automatically detects and prints your LAN IP so phones ca
    - **Buzzer Mode**: Buzz in first to claim the floor. Correct answer earns **+100 points**; wrong answer deducts **-50 points** and eliminates you for the remainder of the round.
    - **Typing Race**: Everyone races to type the title. Points are awarded by placement (**100, 80, 60, 40**).
    - **My MP3s**: Local clips in `static/audio/` are streamed directly by the server.
+   - **Player uploads**: Any player can add MP3s from the lobby. The host can select the shared **Player uploads** playlist.
+   - **Reversed**: Select reversed song direction to hear local or uploaded MP3s backwards.
    - **Popular YouTube hits**: The library includes recognizable songs such as *Shape of You*, *Despacito*, *Gangnam Style*, *Hello*, *Sugar*, and *Faded*.
 5. **Multi-round Flow**: When the timer expires, the next song starts automatically. When the selected playlist is exhausted, the game returns everyone to the lobby. The host can also click **End Game** to return immediately.
+
+Uploaded MP3s are kept in memory and scoped to their lobby. Each file must be an MP3 no larger than 15 MB, with a maximum of 30 uploads per lobby.
 
 ---
 

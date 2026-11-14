@@ -126,6 +126,13 @@ PLAYLISTS: List[Playlist] = [
                 aliases=["Weston-super-Mare", "Weston Super Mare"],
                 source={"type": "audio", "id": "weston_super_mare"},
             ),
+            Track(
+                id="despacito",
+                title="Despacito",
+                artist="Luis Fonsi ft. Daddy Yankee",
+                aliases=["Despacito"],
+                source={"type": "audio", "id": "despacito"},
+            ),
         ],
     ),
     Playlist(

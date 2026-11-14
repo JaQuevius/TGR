@@ -8,6 +8,7 @@ All times are server epoch milliseconds via an injectable clock.
 from __future__ import annotations
 
 import os
+import random
 import re
 import secrets
 import threading
@@ -29,6 +30,8 @@ CLOCK_SLACK_MS = int(os.environ.get("SOUNDBITE_CLOCK_SLACK_MS", "300"))
 BACKDATE_SLACK_MS = int(os.environ.get("SOUNDBITE_BACKDATE_SLACK_MS", "750"))
 LOBBY_IDLE_TIMEOUT_MS = int(os.environ.get("SOUNDBITE_LOBBY_IDLE_MS", "1800000"))  # 30 min
 MAX_PLAYERS_PER_LOBBY = 12
+MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+MAX_UPLOADS_PER_LOBBY = 30
 
 CODE_PATTERN = re.compile(r"^\d{4}$")
 
@@ -64,6 +67,7 @@ class RoundState:
     start_at: int
     buzz_close: int
     phase: str  # "countdown", "open", "locking", "answering", "revealed"
+    reverse_audio: bool = False
 
     # Buzzer-specific fields
     lock_closes_at: Optional[int] = None
@@ -137,6 +141,7 @@ class GameStore:
                 "tokens": {token: pid},
                 "round": None,
                 "played_track_ids": set(),
+                "uploads": {},
                 "created_at": now_ms,
                 "last_active": now_ms,
             }
@@ -235,6 +240,7 @@ class GameStore:
                     "start_at": round_state.start_at,
                     "buzz_close": round_state.buzz_close,
                     "playlist_id": round_state.playlist_id,
+                    "reverse_audio": round_state.reverse_audio,
                     "source": round_state.track.source,  # source only, NEVER title/artist
                     "events": list(round_state.events),
                     "winner": round_state.winner_pid,
@@ -274,6 +280,7 @@ class GameStore:
             return {
                 "server_time": now_ms,
                 "code": code,
+                "upload_count": len(game["uploads"]),
                 "players": players_data,
                 "me": {
                     "pid": current_player.pid,
@@ -283,7 +290,14 @@ class GameStore:
                 "round": round_data,
             }
 
-    def start_round(self, code: str, token: str, mode: str, playlist_id: str) -> Dict[str, Any]:
+    def start_round(
+        self,
+        code: str,
+        token: str,
+        mode: str,
+        playlist_id: str,
+        reverse_audio: bool = False,
+    ) -> Dict[str, Any]:
         """Host initiates a new round."""
         with self._lock:
             now_ms = self.now()
@@ -292,11 +306,18 @@ class GameStore:
                 raise ValueError("Only the host can start a round.")
 
             # Validate playlist and pick track
-            pl = library.get_playlist(playlist_id)
-            if not pl:
-                raise ValueError("Invalid playlist selected.")
-
-            track = library.pick_random_track(playlist_id, game["played_track_ids"])
+            if playlist_id == "player-uploads":
+                available_uploads = [
+                    item["track"]
+                    for item in game["uploads"].values()
+                    if item["track"].id not in game["played_track_ids"]
+                ]
+                track = random.choice(available_uploads) if available_uploads else None
+            else:
+                pl = library.get_playlist(playlist_id)
+                if not pl:
+                    raise ValueError("Invalid playlist selected.")
+                track = library.pick_random_track(playlist_id, game["played_track_ids"])
             if not track:
                 game["round"] = None
                 game["played_track_ids"].clear()
@@ -325,6 +346,7 @@ class GameStore:
                 start_at=start_at,
                 buzz_close=buzz_close,
                 phase="countdown",
+                reverse_audio=bool(reverse_audio),
             )
             new_round.add_event("round_started", {
                 "mode": new_round.mode,
@@ -336,6 +358,65 @@ class GameStore:
             game["last_active"] = now_ms
 
             return {"outcome": "round_started", "snapshot": self._snapshot_unlocked(game, host, now_ms)}
+
+    def get_game_library(self, code: str, token: str) -> List[Dict[str, str]]:
+        with self._lock:
+            game, _player = self._get_game_and_player(code, token)
+            playlists = library.get_playlists_catalog()
+            if game["uploads"]:
+                playlists.append({"id": "player-uploads", "name": "Player uploads"})
+            return playlists
+
+    def upload_track(
+        self,
+        code: str,
+        token: str,
+        filename: str,
+        data: bytes,
+        content_type: str,
+    ) -> Dict[str, Any]:
+        with self._lock:
+            now_ms = self.now()
+            game, player = self._get_game_and_player(code, token)
+            if not filename.lower().endswith(".mp3") or content_type not in ("audio/mpeg", "audio/mp3", "application/octet-stream"):
+                raise ValueError("Only MP3 files are supported.")
+            if not data:
+                raise ValueError("The uploaded MP3 is empty.")
+            if len(data) > MAX_UPLOAD_BYTES:
+                raise ValueError("Each MP3 must be 15 MB or smaller.")
+            if len(game["uploads"]) >= MAX_UPLOADS_PER_LOBBY:
+                raise ValueError("This lobby has reached its 30-file upload limit.")
+
+            track_id = f"upload-{uuid.uuid4().hex[:12]}"
+            title = os.path.splitext(os.path.basename(filename))[0].replace("_", " ").replace("-", " ").strip()
+            title = " ".join(title.split()).title() or "Uploaded track"
+            track = library.Track(
+                id=track_id,
+                title=title,
+                artist=f"Uploaded by {player.name}",
+                aliases=[title, os.path.splitext(os.path.basename(filename))[0]],
+                source={
+                    "type": "audio",
+                    "id": track_id,
+                    "url": f"/api/game/{code}/audio/{track_id}",
+                },
+            )
+            game["uploads"][track_id] = {
+                "track": track,
+                "data": data,
+                "content_type": "audio/mpeg",
+                "owner": player.pid,
+            }
+            game["last_active"] = now_ms
+            return {"track_id": track_id, "title": title, "upload_count": len(game["uploads"])}
+
+    def get_uploaded_audio(self, code: str, token: str, track_id: str) -> Tuple[bytes, str]:
+        with self._lock:
+            game, _player = self._get_game_and_player(code, token)
+            upload = game["uploads"].get(track_id)
+            if not upload:
+                raise KeyError("Audio clip not found.")
+            return upload["data"], upload["content_type"]
 
     def submit_buzz(self, code: str, token: str, round_id: str, buzz_id: str, client_ts: int) -> Dict[str, Any]:
         """Player attempts to buzz in. Returns outcome and fresh snapshot."""
@@ -713,6 +794,7 @@ class GameStore:
                 "start_at": round_state.start_at,
                 "buzz_close": round_state.buzz_close,
                 "playlist_id": round_state.playlist_id,
+                "reverse_audio": round_state.reverse_audio,
                 "source": round_state.track.source,
                 "events": list(round_state.events),
                 "winner": round_state.winner_pid,
@@ -750,6 +832,7 @@ class GameStore:
         return {
             "server_time": now_ms,
             "code": game["code"],
+            "upload_count": len(game["uploads"]),
             "players": players_data,
             "me": {
                 "pid": player.pid,
