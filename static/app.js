@@ -680,7 +680,9 @@ async function enterLobby() {
 
 async function loadPlaylists() {
   try {
-    const playlists = session.local ? localPlaylists : await api('/api/library');
+    const playlists = session.local
+      ? localPlaylists
+      : (await api('/api/library')).filter((playlist) => playlist.id !== 'bread-demo');
     $('playlist-select').innerHTML = playlists
       .map((pl) => `<option value="${escapeHtml(pl.id)}">${escapeHtml(pl.name)}</option>`)
       .join('');
