@@ -6,11 +6,14 @@ Run with ``python main.py`` and open http://localhost:8000 in a browser.
 from __future__ import annotations
 
 import json
+import base64
+import io
 import re
 import secrets
 import threading
 import time
 import uuid
+import wave
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -20,6 +23,31 @@ from urllib.parse import urlparse
 PORT = 8000
 CODE_PATTERN = re.compile(r"^\d{4}$")
 ROUND_LENGTH_SECONDS = 12
+
+
+def make_demo_clip(frequencies: tuple[int, ...]) -> str:
+    """Create a tiny, dependency-free demo clip for the built-in library."""
+    sample_rate = 8000
+    frames = bytearray()
+    for frequency in frequencies:
+        for sample in range(sample_rate // 2):
+            value = int(9000 * ((sample % max(1, sample_rate // frequency)) / max(1, sample_rate // frequency) - 0.5))
+            frames.extend(value.to_bytes(2, "little", signed=True))
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as clip:
+        clip.setnchannels(1)
+        clip.setsampwidth(2)
+        clip.setframerate(sample_rate)
+        clip.writeframes(frames)
+    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:audio/wav;base64,{encoded}"
+
+
+TRACK_LIBRARY = [
+    {"id": "sunrise", "title": "Sunrise on Sourdough", "artist": "The Loafers", "audio": make_demo_clip((392, 523, 659))},
+    {"id": "midnight", "title": "Midnight at the Bakery", "artist": "Crumb Club", "audio": make_demo_clip((330, 440, 554))},
+    {"id": "jams", "title": "Jam on Toast", "artist": "Butter & Beats", "audio": make_demo_clip((262, 330, 392))},
+]
 
 
 class GameStore:
@@ -91,26 +119,20 @@ class GameStore:
         self,
         code: str,
         player_id: str,
-        answer: str,
-        title: str,
-        audio: str,
-        duration: int,
+        track_id: str,
     ) -> None:
         with self._lock:
             game = self._get_game_for_player(code, player_id)
             if game["host_id"] != player_id:
                 raise ValueError("Only the host can start a round.")
-            if not answer.strip():
-                raise ValueError("Add the correct song title before starting.")
-            if not title.strip():
-                raise ValueError("Add a display title before starting.")
-            if not audio.startswith("data:audio/"):
-                raise ValueError("Choose an audio file for the soundbite.")
+            track = next((item for item in TRACK_LIBRARY if item["id"] == track_id), None)
+            if track is None:
+                raise ValueError("Choose a song from the library.")
             game["round"] = {
-                "answer": normalize(answer),
-                "title": title.strip()[:80],
-                "audio": audio,
-                "duration": max(3, min(duration, ROUND_LENGTH_SECONDS)),
+                "answer": normalize(track["title"]),
+                "title": track["title"],
+                "audio": track["audio"],
+                "duration": ROUND_LENGTH_SECONDS,
                 "started_at": time.monotonic(),
                 "status": "playing",
                 "answers": [],
@@ -174,15 +196,15 @@ PAGE = r"""<!doctype html>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Soundbite</title>
   <style>
-    :root { --ink:#f7f4ed; --muted:#a9a69f; --bg:#11110f; --panel:#1b1a17;
-      --line:#393631; --lime:#d7ff4f; --orange:#ff8a5b; }
+    :root { --ink:#fff8e7; --muted:#b99a72; --bg:#2b160d; --panel:#422314;
+      --line:#704327; --lime:#ffd447; --orange:#f28b32; --bread:#f7b955; }
     * { box-sizing:border-box; }
-    body { margin:0; background:radial-gradient(circle at 80% 5%,#2c3020 0,transparent 35%),var(--bg);
+    body { margin:0; background:radial-gradient(circle at 80% 5%,#8d4a20 0,transparent 35%),var(--bg);
       color:var(--ink); font:16px/1.45 Inter,ui-sans-serif,system-ui,sans-serif; min-height:100vh; }
     main { width:min(1040px,calc(100% - 32px)); margin:auto; padding:38px 0 64px; }
     header { display:flex; justify-content:space-between; align-items:center; margin-bottom:70px; }
     .brand { font-weight:900; letter-spacing:-.06em; font-size:26px; }
-    .brand span { color:var(--lime); } .pill { border:1px solid var(--line); padding:7px 12px;
+    .brand span { color:var(--bread); } .pill { border:1px solid var(--line); padding:7px 12px;
       border-radius:99px; color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.12em; }
     .hero { max-width:700px; margin-bottom:44px; } h1 { font-size:clamp(48px,8vw,94px); letter-spacing:-.08em;
       line-height:.9; margin:0 0 25px; } h1 em { color:var(--lime); font-style:normal; }
@@ -191,13 +213,13 @@ PAGE = r"""<!doctype html>
     .card { background:rgba(27,26,23,.9); border:1px solid var(--line); border-radius:22px; padding:27px; }
     .card h2 { margin:0 0 6px; letter-spacing:-.04em; font-size:25px; } .card p { color:var(--muted); margin:0 0 23px; }
     label { color:var(--muted); display:block; font-size:12px; text-transform:uppercase; letter-spacing:.1em; margin:16px 0 7px; }
-    input,button { font:inherit; border-radius:11px; } input { width:100%; padding:13px 14px; border:1px solid var(--line);
-      background:#11110f; color:var(--ink); outline:none; } input:focus { border-color:var(--lime); }
+    input,select,button { font:inherit; border-radius:11px; } input,select { width:100%; padding:13px 14px; border:1px solid var(--line);
+      background:#2b160d; color:var(--ink); outline:none; } input:focus,select:focus { border-color:var(--lime); }
     button { border:0; padding:13px 17px; font-weight:800; cursor:pointer; background:var(--lime); color:#15170f; }
     button.secondary { background:transparent; color:var(--ink); border:1px solid var(--line); } button:disabled { opacity:.45; cursor:not-allowed; }
     .wide { width:100%; margin-top:20px; } .error { color:var(--orange); min-height:23px; margin-top:12px; font-size:14px; }
     .hidden { display:none !important; } .topline { display:flex; justify-content:space-between; align-items:center; gap:20px; }
-    .code { color:var(--lime); font:900 48px/1 monospace; letter-spacing:.08em; } .code small { font:12px sans-serif; color:var(--muted);
+    .code { color:var(--bread); font:900 48px/1 monospace; letter-spacing:.08em; } .code small { font:12px sans-serif; color:var(--muted);
       display:block; letter-spacing:.1em; margin-bottom:8px; } .players { margin:25px 0; display:grid; gap:8px; }
     .player { padding:13px 15px; border:1px solid var(--line); border-radius:12px; display:flex; justify-content:space-between; }
     .score { color:var(--lime); font-weight:800; } .game-layout { display:grid; grid-template-columns:1.3fr .7fr; gap:18px; }
@@ -231,11 +253,9 @@ PAGE = r"""<!doctype html>
   <section id="lobby" class="hidden">
     <div class="topline"><div><div class="code"><small>lobby code</small><span id="lobby-code"></span></div></div><button class="secondary" onclick="leaveGame()">Leave lobby</button></div>
     <div class="grid" style="margin-top:30px"><div class="card"><h2>Players <span id="player-count"></span></h2><p>Share the code, then get ready.</p><div class="players" id="players"></div></div>
-      <div class="card" id="host-controls"><h2>Set the vibe</h2><p>Pick a bite and keep the answer secret.</p>
-        <label for="song-title">Song display name</label><input id="song-title" placeholder="Shown after the round">
-        <label for="song-answer">Correct answer</label><input id="song-answer" placeholder="Song title">
-        <label for="audio-file">Audio clip (3–12 seconds)</label><input id="audio-file" type="file" accept="audio/*">
-        <button class="wide" id="start-round">Start round <span>▶</span></button><div class="error" id="round-error"></div>
+      <div class="card" id="host-controls"><h2>Pick a slice</h2><p>Choose a track from the bread library.</p>
+        <label for="track-select">Song library</label><select id="track-select"></select>
+        <button class="wide" id="start-round">Serve soundbite <span>▶</span></button><div class="error" id="round-error"></div>
       </div>
       <div class="card hidden" id="waiting"><h2>You're in.</h2><p>Wait for the host to start the next soundbite.</p><div class="wave">♪ ♫ ♪</div></div>
     </div>
@@ -259,7 +279,8 @@ async function api(path, options = {}) {
 }
 function setSession(code, playerId, host) { session = {code, playerId, host}; localStorage.setItem("soundbite-session", JSON.stringify(session)); }
 function error(id, message) { $(id).textContent = message; }
-async function enterLobby() { show("lobby"); $("lobby-code").textContent = session.code; $("game-code").textContent = session.code; $("host-controls").classList.toggle("hidden", !session.host); $("waiting").classList.toggle("hidden", session.host); await refresh(); poller = setInterval(refresh, 900); }
+async function enterLobby() { show("lobby"); $("lobby-code").textContent = session.code; $("game-code").textContent = session.code; $("host-controls").classList.toggle("hidden", !session.host); $("waiting").classList.toggle("hidden", session.host); if (session.host) await loadLibrary(); await refresh(); poller = setInterval(refresh, 900); }
+async function loadLibrary() { try { const tracks = await api("/api/library"); $("track-select").innerHTML = tracks.map(track => `<option value="${track.id}">${escapeHtml(track.title)} — ${escapeHtml(track.artist)}</option>`).join(""); } catch(e) { error("round-error",e.message); } }
 async function refresh() {
   if (!session) return;
   try { const state = await api(`/api/game/${session.code}`); renderPlayers(state.players, "players"); renderPlayers(state.players, "game-players");
@@ -279,7 +300,7 @@ function renderRound(round) {
 function escapeHtml(value) { return value.replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c])); }
 $("host-form").onsubmit = async e => { e.preventDefault(); error("host-error",""); try { const d = await api("/api/host", {method:"POST",body:JSON.stringify({name:$("host-name").value})}); setSession(d.code,d.player_id,true); enterLobby(); } catch(e) { error("host-error",e.message); } };
 $("join-form").onsubmit = async e => { e.preventDefault(); error("join-error",""); try { const d = await api("/api/join", {method:"POST",body:JSON.stringify({code:$("join-code").value,name:$("join-name").value})}); setSession(d.code,d.player_id,false); enterLobby(); } catch(e) { error("join-error",e.message); } };
-$("start-round").onclick = async () => { error("round-error",""); const file = $("audio-file").files[0]; if (!file) return error("round-error","Choose an audio clip first."); const audio = await new Promise(resolve => { const r = new FileReader(); r.onload=()=>resolve(r.result); r.readAsDataURL(file); }); try { await api(`/api/game/${session.code}/round`, {method:"POST",body:JSON.stringify({player_id:session.playerId,title:$("song-title").value,answer:$("song-answer").value,audio,duration:12})}); } catch(e) { error("round-error",e.message); } };
+$("start-round").onclick = async () => { error("round-error",""); try { await api(`/api/game/${session.code}/round`, {method:"POST",body:JSON.stringify({player_id:session.playerId,track_id:$("track-select").value})}); } catch(e) { error("round-error",e.message); } };
 $("answer-form").onsubmit = async e => { e.preventDefault(); $("answer-status").textContent = ""; try { const d = await api(`/api/game/${session.code}/answer`, {method:"POST",body:JSON.stringify({player_id:session.playerId,answer:$("answer").value})}); $("answer-status").textContent = `Correct! +${d.points} points`; $("answer").value = ""; } catch(e) { $("answer-status").textContent = e.message; } };
 function leaveGame() { clearInterval(poller); session=null; lastRound=null; localStorage.removeItem("soundbite-session"); show("home"); }
 const saved = JSON.parse(localStorage.getItem("soundbite-session") || "null"); if (saved) { session=saved; enterLobby(); }
@@ -301,6 +322,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+            return
+        if parsed.path == "/api/library":
+            self._send_json(
+                [
+                    {"id": track["id"], "title": track["title"], "artist": track["artist"]}
+                    for track in TRACK_LIBRARY
+                ]
+            )
             return
         if parsed.path.startswith("/api/game/"):
             try:
@@ -333,7 +362,7 @@ class Handler(BaseHTTPRequestHandler):
                 code, action = match.groups()
                 player_id = str(payload.get("player_id", ""))
                 if action == "round":
-                    STORE.start_round(code, player_id, str(payload.get("answer", "")), str(payload.get("title", "")), str(payload.get("audio", "")), int(payload.get("duration", 12)))
+                    STORE.start_round(code, player_id, str(payload.get("track_id", "")))
                     self._send_json({"ok": True})
                 elif action == "answer":
                     self._send_json(STORE.submit_answer(code, player_id, str(payload.get("answer", ""))))

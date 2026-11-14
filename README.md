@@ -14,8 +14,14 @@ answers earning 80, 60, and so on (down to 40).
    ```
 
 3. Open `http://localhost:8000`, create a lobby, and share the four-digit code.
-4. As host, choose an audio clip and enter the correct song title before
-   starting each round.
+4. As host, choose a track from the built-in bread library before starting
+   each round. Players only see the soundbite and answer box.
+
+The starter library uses generated demo clips so the project works without
+provider credentials. Spotify, YouTube, and SoundCloud playback can be added
+through their official browser SDKs/widgets, but each has provider rules,
+authentication requirements, and content licensing restrictions; the app
+should not download or re-host those tracks.
 
 ## Authors
 
