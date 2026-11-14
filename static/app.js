@@ -7,7 +7,7 @@
 
 import { syncClock, startClockSync, serverNow, getClockOffset, getLastRTT, absorbSnapshotTime } from './clock.js';
 import { Outbox, apiFetch, generateId, getConnectionState, onConnectionStateChange, debugConfig, setDebugOption } from './net.js';
-import { preloadAudio, schedulePlayback, stopAudio, isSoundMuted, setSoundMuted, unlockAudio, setOnAudioBlocked } from './audio.js';
+import { preloadAudio, schedulePlayback, stopAudio, isSoundMuted, setSoundMuted, unlockAudio, resumeAudio, setOnAudioBlocked } from './audio.js';
 
 // DOM Helper
 const $ = (id) => document.getElementById(id);
@@ -21,11 +21,11 @@ let outbox = null;
 let pendingEarlyAnswer = null; // Stored if user types before floor is confirmed
 let currentRoundId = null;
 let hasBuzzedThisRound = false;
+let activeRoundSettings = null;
+let autoAdvanceRoundId = null;
+let autoAdvanceTimer = null;
 const localPlaylists = [
-  { id: '90s', name: '90s throwbacks' },
-  { id: '2000s', name: '2000s hits' },
-  { id: '2010s', name: '2010s anthems' },
-  { id: 'edm', name: 'EDM party' },
+  { id: 'local-mp3', name: 'My MP3s' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -240,6 +240,9 @@ function handleSnapshot(snapshot) {
     currentRoundId = null;
     hasBuzzedThisRound = false;
     pendingEarlyAnswer = null;
+    activeRoundSettings = null;
+    autoAdvanceRoundId = null;
+    clearTimeout(autoAdvanceTimer);
     return;
   }
 
@@ -251,6 +254,10 @@ function handleSnapshot(snapshot) {
   // Handle Round ID Change (Fresh Round)
   if (currentRoundId !== round.round_id) {
     currentRoundId = round.round_id;
+    activeRoundSettings = {
+      mode: round.mode,
+      playlistId: round.playlist_id || $('playlist-select').value,
+    };
     hasBuzzedThisRound = false;
     pendingEarlyAnswer = null;
     $('answer-input').value = '';
@@ -290,6 +297,32 @@ function renderPlayers(players) {
   if ($('player-count')) $('player-count').textContent = `(${players.length})`;
 }
 
+function scheduleAutomaticNextRound(round) {
+  if (!session.host || autoAdvanceRoundId === round.round_id || !activeRoundSettings) return;
+  if (serverNow() < round.buzz_close) return;
+
+  autoAdvanceRoundId = round.round_id;
+  clearTimeout(autoAdvanceTimer);
+  autoAdvanceTimer = setTimeout(async () => {
+    try {
+      const res = await api(`/api/game/${session.code}/round`, {
+        method: 'POST',
+        body: JSON.stringify({
+          mode: activeRoundSettings.mode,
+          playlist_id: activeRoundSettings.playlistId,
+        }),
+      });
+      handleSnapshot(res.snapshot);
+      if (res.outcome === 'game_finished') {
+        $('lobby-error').textContent = 'That playlist is finished. Start a new game whenever you are ready.';
+      }
+    } catch (err) {
+      $('answer-status').textContent = `Next song could not start: ${err.message}`;
+      autoAdvanceRoundId = null;
+    }
+  }, 2000);
+}
+
 function renderRound(round) {
   const mePid = session.pid;
   const isRaceMode = round.mode === 'race';
@@ -318,6 +351,8 @@ function renderRound(round) {
     $('host-next-controls').classList.toggle('hidden', !session.host);
     $('buzz-btn').classList.add('hidden');
     $('answer-form').classList.add('hidden');
+    $('play-sound-btn').classList.add('hidden');
+    scheduleAutomaticNextRound(round);
     return;
   }
 
@@ -327,6 +362,7 @@ function renderRound(round) {
   if (isRaceMode) {
     $('buzz-btn').classList.add('hidden');
     $('answer-form').classList.remove('hidden');
+    $('play-sound-btn').classList.remove('hidden');
     $('answer-input').disabled = round.phase !== 'open';
     $('answer-submit-btn').disabled = round.phase !== 'open';
     return;
@@ -334,6 +370,7 @@ function renderRound(round) {
 
   // BUZZER MODE
   $('buzz-btn').classList.remove('hidden');
+  $('play-sound-btn').classList.remove('hidden');
 
   const mePlayer = lastSnapshot.players.find((p) => p.pid === mePid);
   const isEliminated = mePlayer ? mePlayer.eliminated : false;
@@ -435,6 +472,7 @@ function startLocalTimerLoop() {
       $('round-timer').textContent = `Answer: ${leftSec}s`;
     } else {
       $('round-timer').textContent = 'Round over';
+      if (round.phase === 'revealed') scheduleAutomaticNextRound(round);
     }
 
     // Refresh telemetry in debug panel if visible
@@ -558,11 +596,13 @@ function setupDomListeners() {
     unlockAudio();
     const muted = !isSoundMuted();
     setSoundMuted(muted);
+    resumeAudio();
     $('sound-toggle-btn').textContent = muted ? '🔇 Sound OFF' : '🔊 Sound ON';
   };
 
   $('enable-sound-btn').onclick = () => {
     unlockAudio();
+    resumeAudio();
     $('sound-blocked-banner').classList.add('hidden');
   };
 
@@ -636,15 +676,31 @@ function setupDomListeners() {
   // End Game Button
   $('btn-finish-game').onclick = async () => {
     try {
-      await api(`/api/game/${session.code}/finish`, { method: 'POST' });
-    } catch (e) {}
+      const res = await api(`/api/game/${session.code}/finish`, { method: 'POST' });
+      handleSnapshot(res.snapshot);
+    } catch (err) {
+      $('answer-status').textContent = `Could not end game: ${err.message}`;
+    }
   };
 
   // Leave Lobby
   $('btn-leave-lobby').onclick = async () => {
     try {
       await api(`/api/game/${session.code}/leave`, { method: 'POST' });
-    } catch (e) {}
+    } catch (err) {
+      $('join-error').textContent = `Could not leave lobby cleanly: ${err.message}`;
+    }
+    clearSession();
+    showScreen('home');
+    checkLastSessionRejoin();
+  };
+
+  $('btn-leave-match').onclick = async () => {
+    try {
+      await api(`/api/game/${session.code}/leave`, { method: 'POST' });
+    } catch (err) {
+      $('answer-status').textContent = `Could not leave match cleanly: ${err.message}`;
+    }
     clearSession();
     showScreen('home');
     checkLastSessionRejoin();
@@ -655,6 +711,11 @@ function setupDomListeners() {
 
   // Answer Form
   $('answer-form').onsubmit = handleAnswerSubmit;
+  $('play-sound-btn').onclick = () => {
+    unlockAudio();
+    resumeAudio();
+    $('play-sound-btn').textContent = '🔊 Sound playing';
+  };
 }
 
 async function enterLobby() {
@@ -682,9 +743,9 @@ async function loadPlaylists() {
   try {
     const playlists = session.local
       ? localPlaylists
-      : (await api('/api/library')).filter((playlist) => playlist.id !== 'bread-demo');
+      : (await api('/api/library')).filter((playlist) => playlist.id === 'local-mp3');
     $('playlist-select').innerHTML = playlists
-      .map((pl) => `<option value="${escapeHtml(pl.id)}">${escapeHtml(pl.name)}</option>`)
+      .map((pl) => `<option value="${escapeHtml(pl.id)}" selected>${escapeHtml(pl.name)}</option>`)
       .join('');
   } catch (err) {
     $('lobby-error').textContent = err.message;

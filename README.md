@@ -44,7 +44,9 @@ On startup, the server automatically detects and prints your LAN IP so phones ca
 4. **Choose Mode**:
    - **Buzzer Mode**: Buzz in first to claim the floor. Correct answer earns **+100 points**; wrong answer deducts **-50 points** and eliminates you for the remainder of the round.
    - **Typing Race**: Everyone races to type the title. Points are awarded by placement (**100, 80, 60, 40**).
-5. **Multi-round Flow**: After a round is revealed, the host can immediately click **Next Round ▶** directly on the reveal card.
+   - **My MP3s**: Local clips in `static/audio/` are streamed directly by the server.
+   - **Popular YouTube hits**: The library includes recognizable songs such as *Shape of You*, *Despacito*, *Gangnam Style*, *Hello*, *Sugar*, and *Faded*.
+5. **Multi-round Flow**: When the timer expires, the next song starts automatically. When the selected playlist is exhausted, the game returns everyone to the lobby. The host can also click **End Game** to return immediately.
 
 ---
 

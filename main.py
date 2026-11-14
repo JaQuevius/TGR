@@ -223,6 +223,7 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
         """Serves audio bytes supporting HTTP 206 Range requests for iOS Safari."""
         # 1. Check in-memory store first
         audio_bytes = library.get_audio_bytes(audio_id)
+        content_type = "audio/wav"
 
         # 2. Check static/audio/<audio_id> on disk
         if not audio_bytes:
@@ -231,6 +232,11 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
                 if os.path.isfile(candidate):
                     with open(candidate, "rb") as f:
                         audio_bytes = f.read()
+                    content_type = {
+                        ".wav": "audio/wav",
+                        ".mp3": "audio/mpeg",
+                        ".ogg": "audio/ogg",
+                    }[ext]
                     break
 
         if not audio_bytes:
@@ -248,7 +254,7 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
                 if start < total_len and end < total_len and start <= end:
                     chunk = audio_bytes[start : end + 1]
                     self.send_response(HTTPStatus.PARTIAL_CONTENT)
-                    self.send_header("Content-Type", "audio/wav")
+                    self.send_header("Content-Type", content_type)
                     self.send_header("Content-Range", f"bytes {start}-{end}/{total_len}")
                     self.send_header("Content-Length", str(len(chunk)))
                     self.send_header("Accept-Ranges", "bytes")
@@ -259,7 +265,7 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
 
         # Normal full 200 response
         self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "audio/wav")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(total_len))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Cache-Control", "public, max-age=31536000, immutable")

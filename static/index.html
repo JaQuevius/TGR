@@ -110,7 +110,10 @@
         <div class="pill">lobby <span id="game-code">0000</span></div>
         <div id="game-mode-badge" class="pill" style="border-color:var(--bread);">Buzzer</div>
       </div>
-      <div class="timer" id="round-timer">12s left</div>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div class="timer" id="round-timer">12s left</div>
+        <button id="btn-leave-match" class="secondary" type="button">Leave match</button>
+      </div>
     </div>
 
     <div class="game-layout" style="margin-top:18px">
@@ -124,7 +127,9 @@
           <!-- Hidden YouTube Player Container (min 200x200 for API compliance, hidden behind curtain) -->
           <div id="youtube-curtain" class="youtube-curtain">
             <div id="youtube-player-mount"></div>
+            <div id="youtube-direct-mount"></div>
           </div>
+          <button id="play-sound-btn" class="secondary" type="button">▶ Play sound</button>
         </div>
 
         <!-- Buzzer Button -->
@@ -199,6 +204,6 @@
   </aside>
 </main>
 
-<script type="module" src="app.js?v=3"></script>
+<script type="module" src="app.js?v=9"></script>
 </body>
 </html>

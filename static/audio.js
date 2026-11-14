@@ -15,6 +15,10 @@ let currentAudioElement = null;
 let currentBlobUrl = null;
 let ytPlayer = null;
 let ytReady = false;
+let pendingYouTubeCue = null;
+let pendingYouTubePlay = null;
+let directAudioIframe = null;
+let playbackStartAtMs = null;
 let scheduledPlayTimer = null;
 
 // Callbacks
@@ -60,6 +64,32 @@ export function unlockAudio() {
   silent.play().catch(() => {});
 }
 
+export function resumeAudio() {
+  if (currentSource && currentSource.type === 'youtube') {
+    if (isMuted) return;
+    const mount = document.getElementById('youtube-direct-mount');
+    if (mount) {
+      const elapsed = playbackStartAtMs ? Math.max(0, (serverNow() - playbackStartAtMs) / 1000) : 0;
+      const start = Math.max(0, Math.floor((currentSource.start || 0) + elapsed));
+      const end = currentSource.end ? `&end=${Math.ceil(currentSource.end + elapsed)}` : '';
+      if (directAudioIframe) directAudioIframe.remove();
+      directAudioIframe = document.createElement('iframe');
+      directAudioIframe.width = '200';
+      directAudioIframe.height = '200';
+      directAudioIframe.allow = 'autoplay; encrypted-media';
+      directAudioIframe.title = 'Soundbite audio';
+      directAudioIframe.src = `https://www.youtube.com/embed/${encodeURIComponent(currentSource.videoId)}?autoplay=1&controls=0&disablekb=1&playsinline=1&rel=0&start=${start}${end}`;
+      mount.appendChild(directAudioIframe);
+    }
+    return;
+  }
+  if (currentAudioElement) {
+    currentAudioElement.play().catch(() => {
+      if (onAudioBlockedListener) onAudioBlockedListener(true);
+    });
+  }
+}
+
 /**
  * Preload audio during countdown so it can play uninterrupted even if offline.
  */
@@ -96,6 +126,7 @@ export async function preloadAudio(source) {
  */
 export function schedulePlayback(startAtMs, durationSec = 12) {
   clearTimeout(scheduledPlayTimer);
+  playbackStartAtMs = startAtMs;
 
   const now = serverNow();
   const delayMs = startAtMs - now;
@@ -153,6 +184,11 @@ export function stopAudio() {
     currentBlobUrl = null;
   }
 
+  if (directAudioIframe) {
+    directAudioIframe.remove();
+    directAudioIframe = null;
+  }
+
   if (ytPlayer && ytPlayer.stopVideo) {
     try {
       ytPlayer.stopVideo();
@@ -198,16 +234,31 @@ function initYouTubePlayer() {
     height: '200',
     width: '200',
     playerVars: {
-      autoplay: 0,
+      autoplay: 1,
       controls: 0,
       disablekb: 1,
       modestbranding: 1,
       rel: 0,
       playsinline: 1,
+      origin: window.location.origin,
     },
     events: {
       onReady: () => {
         if (isMuted && ytPlayer.mute) ytPlayer.mute();
+        if (pendingYouTubeCue) {
+          ytPlayer.cueVideoById(pendingYouTubeCue);
+        }
+        // Browsers allow muted autoplay but may block a delayed audible start.
+        // Prime the player now, then seek and unmute at the synchronized start.
+        if (currentSource && currentSource.type === 'youtube') {
+          ytPlayer.mute();
+          ytPlayer.playVideo();
+        }
+        if (pendingYouTubePlay !== null) {
+          const offset = pendingYouTubePlay;
+          pendingYouTubePlay = null;
+          playYouTube(offset);
+        }
       },
       onError: (e) => {
         console.warn('YouTube Player error:', e);
@@ -217,19 +268,18 @@ function initYouTubePlayer() {
 }
 
 function cueYouTube(videoId, startSeconds = 0) {
+  pendingYouTubeCue = { videoId, startSeconds };
   if (!ytPlayer || !ytPlayer.cueVideoById) {
-    setTimeout(() => {
-      if (ytPlayer && ytPlayer.cueVideoById) {
-        ytPlayer.cueVideoById({ videoId, startSeconds });
-      }
-    }, 500);
     return;
   }
-  ytPlayer.cueVideoById({ videoId, startSeconds });
+  ytPlayer.cueVideoById(pendingYouTubeCue);
 }
 
 function playYouTube(startOffsetSec = 0) {
-  if (!ytPlayer || !ytPlayer.seekTo || !ytPlayer.playVideo) return;
+  if (!ytPlayer || !ytPlayer.seekTo || !ytPlayer.playVideo) {
+    pendingYouTubePlay = startOffsetSec;
+    return;
+  }
   try {
     if (isMuted) ytPlayer.mute();
     else ytPlayer.unMute();

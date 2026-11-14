@@ -234,6 +234,7 @@ class GameStore:
                     "phase": round_state.phase,
                     "start_at": round_state.start_at,
                     "buzz_close": round_state.buzz_close,
+                    "playlist_id": round_state.playlist_id,
                     "source": round_state.track.source,  # source only, NEVER title/artist
                     "events": list(round_state.events),
                     "winner": round_state.winner_pid,
@@ -297,7 +298,13 @@ class GameStore:
 
             track = library.pick_random_track(playlist_id, game["played_track_ids"])
             if not track:
-                raise ValueError("No tracks available in this playlist.")
+                game["round"] = None
+                game["played_track_ids"].clear()
+                game["last_active"] = now_ms
+                return {
+                    "outcome": "game_finished",
+                    "snapshot": self._snapshot_unlocked(game, host, now_ms),
+                }
 
             game["played_track_ids"].add(track.id)
 
@@ -573,9 +580,12 @@ class GameStore:
                 raise ValueError("Only the host can finish a round.")
 
             rnd: Optional[RoundState] = game["round"]
-            if rnd and rnd.phase != "revealed":
-                rnd.phase = "revealed"
-                rnd.add_event("round_revealed", {"winner": None})
+            if rnd:
+                if rnd.phase != "revealed":
+                    rnd.phase = "revealed"
+                    rnd.add_event("round_revealed", {"winner": None})
+                game["round"] = None
+                game["last_active"] = now_ms
 
             return {"outcome": "round_finished", "snapshot": self._snapshot_unlocked(game, host, now_ms)}
 
@@ -702,6 +712,7 @@ class GameStore:
                 "phase": round_state.phase,
                 "start_at": round_state.start_at,
                 "buzz_close": round_state.buzz_close,
+                "playlist_id": round_state.playlist_id,
                 "source": round_state.track.source,
                 "events": list(round_state.events),
                 "winner": round_state.winner_pid,

@@ -102,6 +102,33 @@ PLAYLISTS: List[Playlist] = [
         ],
     ),
     Playlist(
+        id="local-mp3",
+        name="My MP3s",
+        tracks=[
+            Track(
+                id="somewhere_only_we_know",
+                title="Somewhere Only We Know",
+                artist="Local MP3",
+                aliases=["Somewhere Only We Know"],
+                source={"type": "audio", "id": "somewhere_only_we_know"},
+            ),
+            Track(
+                id="this_side_of_paradise",
+                title="This Side of Paradise",
+                artist="Local MP3",
+                aliases=["This Side Of Paradise"],
+                source={"type": "audio", "id": "this_side_of_paradise"},
+            ),
+            Track(
+                id="weston_super_mare",
+                title="Weston Super Mare",
+                artist="Local MP3",
+                aliases=["Weston-super-Mare", "Weston Super Mare"],
+                source={"type": "audio", "id": "weston_super_mare"},
+            ),
+        ],
+    ),
+    Playlist(
         id="90s-throwbacks",
         name="90s throwbacks",
         tracks=[
@@ -234,6 +261,54 @@ PLAYLISTS: List[Playlist] = [
                 artist="Avicii",
                 aliases=["Wake Me Up When Its All Over"],
                 source={"type": "youtube", "videoId": "IcrbM1l_BoI", "start": 0, "end": 10},
+            ),
+        ],
+    ),
+    Playlist(
+        id="popular-youtube",
+        name="Popular YouTube hits",
+        tracks=[
+            Track(
+                id="popular-1",
+                title="Shape of You",
+                artist="Ed Sheeran",
+                aliases=["Shape Of You"],
+                source={"type": "youtube", "videoId": "JGwWNGJDvW8", "start": 0, "end": 10},
+            ),
+            Track(
+                id="popular-2",
+                title="Despacito",
+                artist="Luis Fonsi ft. Daddy Yankee",
+                aliases=["Despacito"],
+                source={"type": "youtube", "videoId": "kJQP7kiw5Fk", "start": 0, "end": 10},
+            ),
+            Track(
+                id="popular-3",
+                title="Gangnam Style",
+                artist="PSY",
+                aliases=["Gangnam Style", "Oppa Gangnam Style"],
+                source={"type": "youtube", "videoId": "9bZkp7q19f0", "start": 0, "end": 10},
+            ),
+            Track(
+                id="popular-4",
+                title="Hello",
+                artist="Adele",
+                aliases=["Hello Adele"],
+                source={"type": "youtube", "videoId": "YQHsXMglC9A", "start": 0, "end": 10},
+            ),
+            Track(
+                id="popular-5",
+                title="Sugar",
+                artist="Maroon 5",
+                aliases=["Sugar Maroon 5"],
+                source={"type": "youtube", "videoId": "09R8_2nJtjg", "start": 0, "end": 10},
+            ),
+            Track(
+                id="popular-6",
+                title="Faded",
+                artist="Alan Walker",
+                aliases=["Faded Alan Walker"],
+                source={"type": "youtube", "videoId": "60ItHLz5WEA", "start": 0, "end": 10},
             ),
         ],
     ),
