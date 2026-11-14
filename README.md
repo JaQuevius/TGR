@@ -1,6 +1,21 @@
-## bread. DurHack 2026 Project
+## Soundbite
 
-Simple overview of use/purpose.
+A browser-based party game where players race to identify a song from a short
+soundbite. The first correct answer earns 100 points, with later correct
+answers earning 80, 60, and so on (down to 40).
+
+### Run locally
+
+1. Install Python 3.10 or newer.
+2. Start the server:
+
+   ```text
+   python main.py
+   ```
+
+3. Open `http://localhost:8000`, create a lobby, and share the four-digit code.
+4. As host, choose an audio clip and enter the correct song title before
+   starting each round.
 
 ## Authors
 
