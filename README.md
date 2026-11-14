@@ -20,6 +20,11 @@ python main.py
 ```
 *(Optionally override the port: `python main.py --port 8080` or `PORT=8080 python main.py`).*
 
+Use the URL printed by `main.py` for multiplayer. Do not open `static/index.html`
+through a basic file server such as `python -m http.server`: that only serves
+frontend files and has no `/api/host`, `/api/join`, or lobby polling endpoints,
+so players cannot synchronize.
+
 On startup, the server automatically detects and prints your LAN IP so phones can join directly:
 ```
 🍞 ========================================================
