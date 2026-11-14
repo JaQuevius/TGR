@@ -35,6 +35,8 @@ const localPlaylists = [
 async function init() {
   setupDomListeners();
   setupDebugPanel();
+  const qrCode = new URLSearchParams(location.search).get('code');    
+  if (qrCode) $('join-code').value = qrCode;
 
   // Initialize NTP Clock
   await syncClock(4);
@@ -721,6 +723,7 @@ function setupDomListeners() {
 async function enterLobby() {
   showScreen('lobby');
   $('lobby-code').textContent = session.code;
+  renderJoinQr();
   $('game-code').textContent = session.code;
   $('host-controls').classList.toggle('hidden', !session.host);
   $('waiting-card').classList.toggle('hidden', session.host);
@@ -764,6 +767,14 @@ function startLocalDemo(name) {
   });
   $('host-error').textContent = '';
   enterLobby();
+}
+
+function renderJoinQr() {
+  const link = `${location.origin}/?code=${session.code}`;
+  const qr = qrcode(0, 'M');
+  qr.addData(link);
+  qr.make();
+  $('join-qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 2 });
 }
 
 function escapeHtml(str) {
