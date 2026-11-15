@@ -147,15 +147,10 @@
       <div class="card">
         <h2 id="round-heading">Name that sound</h2>
 
-        <!-- Soundbite Audio Player & Hidden YouTube Mount -->
+        <!-- Soundbite Audio Player -->
         <div class="audio-box" id="audio-container">
           <div class="wave" id="audio-wave">♪ ♫ ♪</div>
           <div id="audio-status-hint" style="font-size:13px; color:var(--muted); margin-top:8px;">Listen closely...</div>
-          <!-- Hidden YouTube Player Container (min 200x200 for API compliance, hidden behind curtain) -->
-          <div id="youtube-curtain" class="youtube-curtain">
-            <div id="youtube-player-mount"></div>
-            <div id="youtube-direct-mount"></div>
-          </div>
           <button id="play-sound-btn" class="secondary" type="button">▶ Play sound</button>
         </div>
 
@@ -175,7 +170,6 @@
         <!-- REVEAL CARD (Appears when round is revealed) -->
         <div id="reveal-card" class="reveal-card hidden">
           <h3 id="reveal-title">Song Title</h3>
-          <p id="reveal-artist" style="margin: 4px 0 14px; font-weight:600; color:var(--muted);">Artist Name</p>
           <div id="reveal-winner" style="font-size:15px; font-weight:bold; color:var(--crust);"></div>
 
           <!-- Host Next Round Controls -->
@@ -231,10 +225,7 @@
   </aside>
 </main>
 
-<<<<<<< HEAD
 <script src="vendor/qrcode.js"></script>
-=======
->>>>>>> 4904b9064bea5d632f8204080df239c0960fdd02
-<script type="module" src="app.js?v=15"></script>
+<script type="module" src="app.js?v=16"></script>
 </body>
 </html>

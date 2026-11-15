@@ -1,7 +1,7 @@
 /**
  * Soundbite Resilient Audio Controller
  *
- * Handles both offline-capable audio Blobs and hidden YouTube IFrame playback.
+ * Handles offline-capable audio Blobs.
  * Synchronizes start time with serverNow() and provides user-gesture unlocking
  * and per-device sound mute toggles.
  */
@@ -16,12 +16,6 @@ let currentAudioBuffer = null;
 let currentBufferSource = null;
 let audioContext = null;
 let currentBlobUrl = null;
-let ytPlayer = null;
-let ytReady = false;
-let pendingYouTubeCue = null;
-let pendingYouTubePlay = null;
-let directAudioIframe = null;
-let playbackStartAtMs = null;
 let scheduledPlayTimer = null;
 
 // Callbacks
@@ -39,10 +33,6 @@ export function setSoundMuted(muted) {
   isMuted = muted;
   if (currentAudioElement) {
     currentAudioElement.muted = isMuted;
-  }
-  if (ytPlayer && ytPlayer.mute && ytPlayer.unMute) {
-    if (isMuted) ytPlayer.mute();
-    else ytPlayer.unMute();
   }
 }
 
@@ -72,24 +62,6 @@ export function resumeAudio() {
     startPlayback(0);
     return;
   }
-  if (currentSource && currentSource.type === 'youtube') {
-    if (isMuted) return;
-    const mount = document.getElementById('youtube-direct-mount');
-    if (mount) {
-      const elapsed = playbackStartAtMs ? Math.max(0, (serverNow() - playbackStartAtMs) / 1000) : 0;
-      const start = Math.max(0, Math.floor((currentSource.start || 0) + elapsed));
-      const end = currentSource.end ? `&end=${Math.ceil(currentSource.end + elapsed)}` : '';
-      if (directAudioIframe) directAudioIframe.remove();
-      directAudioIframe = document.createElement('iframe');
-      directAudioIframe.width = '200';
-      directAudioIframe.height = '200';
-      directAudioIframe.allow = 'autoplay; encrypted-media';
-      directAudioIframe.title = 'Soundbite audio';
-      directAudioIframe.src = `https://www.youtube.com/embed/${encodeURIComponent(currentSource.videoId)}?autoplay=1&controls=0&disablekb=1&playsinline=1&rel=0&start=${start}${end}`;
-      mount.appendChild(directAudioIframe);
-    }
-    return;
-  }
   if (currentAudioElement) {
     currentAudioElement.play().catch(() => {
       if (onAudioBlockedListener) onAudioBlockedListener(true);
@@ -106,38 +78,38 @@ export async function preloadAudio(source) {
 
   if (!source) return;
 
-  if (source.type === 'audio') {
-    const audioUrl = source.url || `/audio/${encodeURIComponent(source.id)}`;
-    try {
-      const headers = source.token ? { 'X-Player-Token': source.token } : {};
-      const resp = await fetch(audioUrl, { headers });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      if (source.reverse) {
-        audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
-        currentAudioBuffer = await audioContext.decodeAudioData(await resp.arrayBuffer());
-        for (let channel = 0; channel < currentAudioBuffer.numberOfChannels; channel++) {
-          const samples = currentAudioBuffer.getChannelData(channel);
-          for (let left = 0, right = samples.length - 1; left < right; left++, right--) {
-            const value = samples[left];
-            samples[left] = samples[right];
-            samples[right] = value;
-          }
+  if (source.type !== 'audio') {
+    throw new Error(`Unsupported audio source type: ${source.type}`);
+  }
+
+  // Lobby uploads come with their own URL and need the player token
+  const audioUrl = source.url || `/audio/${encodeURIComponent(source.id)}`;
+  try {
+    const headers = source.token ? { 'X-Player-Token': source.token } : {};
+    const resp = await fetch(audioUrl, { headers });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    if (source.reverse) {
+      audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)();
+      currentAudioBuffer = await audioContext.decodeAudioData(await resp.arrayBuffer());
+      for (let channel = 0; channel < currentAudioBuffer.numberOfChannels; channel++) {
+        const samples = currentAudioBuffer.getChannelData(channel);
+        for (let left = 0, right = samples.length - 1; left < right; left++, right--) {
+          const value = samples[left];
+          samples[left] = samples[right];
+          samples[right] = value;
         }
-        return;
       }
-      const blob = await resp.blob();
-      currentBlobUrl = URL.createObjectURL(blob);
-      currentAudioElement = new Audio(currentBlobUrl);
-      currentAudioElement.muted = isMuted;
-      currentAudioElement.preload = 'auto';
-    } catch (err) {
-      console.warn('Failed to preload audio into blob, using direct stream:', err);
-      currentAudioElement = new Audio(audioUrl);
-      currentAudioElement.muted = isMuted;
+      return;
     }
-  } else if (source.type === 'youtube') {
-    ensureYouTubeApiLoaded();
-    cueYouTube(source.videoId, source.start || 0);
+    const blob = await resp.blob();
+    currentBlobUrl = URL.createObjectURL(blob);
+    currentAudioElement = new Audio(currentBlobUrl);
+    currentAudioElement.muted = isMuted;
+    currentAudioElement.preload = 'auto';
+  } catch (err) {
+    console.warn('Failed to preload audio into blob, using direct stream:', err);
+    currentAudioElement = new Audio(audioUrl);
+    currentAudioElement.muted = isMuted;
   }
 }
 
@@ -147,7 +119,6 @@ export async function preloadAudio(source) {
  */
 export function schedulePlayback(startAtMs, durationSec = 12) {
   clearTimeout(scheduledPlayTimer);
-  playbackStartAtMs = startAtMs;
 
   const now = serverNow();
   const delayMs = startAtMs - now;
@@ -168,7 +139,7 @@ export function schedulePlayback(startAtMs, durationSec = 12) {
 function startPlayback(startOffsetSec = 0) {
   if (!currentSource) return;
 
-  if (currentSource.type === 'audio' && currentSource.reverse && currentAudioBuffer && audioContext) {
+  if (currentSource.reverse && currentAudioBuffer && audioContext) {
     try {
       if (currentBufferSource) currentBufferSource.stop();
       currentBufferSource = audioContext.createBufferSource();
@@ -180,22 +151,22 @@ function startPlayback(startOffsetSec = 0) {
       console.warn('Reversed audio playback failed:', err);
       if (onAudioBlockedListener) onAudioBlockedListener(true);
     }
-  } else if (currentSource.type === 'audio' && currentAudioElement) {
-    try {
-      currentAudioElement.currentTime = startOffsetSec;
-      currentAudioElement.muted = isMuted;
-      const promise = currentAudioElement.play();
-      if (promise !== undefined) {
-        promise.catch((err) => {
-          console.warn('Autoplay blocked:', err);
-          if (onAudioBlockedListener) onAudioBlockedListener(true);
-        });
-      }
-    } catch (e) {
-      if (onAudioBlockedListener) onAudioBlockedListener(true);
+    return;
+  }
+  if (!currentAudioElement) return;
+
+  try {
+    currentAudioElement.currentTime = startOffsetSec;
+    currentAudioElement.muted = isMuted;
+    const promise = currentAudioElement.play();
+    if (promise !== undefined) {
+      promise.catch((err) => {
+        console.warn('Autoplay blocked:', err);
+        if (onAudioBlockedListener) onAudioBlockedListener(true);
+      });
     }
-  } else if (currentSource.type === 'youtube') {
-    playYouTube(startOffsetSec);
+  } catch (e) {
+    if (onAudioBlockedListener) onAudioBlockedListener(true);
   }
 }
 
@@ -222,111 +193,5 @@ export function stopAudio() {
       URL.revokeObjectURL(currentBlobUrl);
     } catch (e) {}
     currentBlobUrl = null;
-  }
-
-  if (directAudioIframe) {
-    directAudioIframe.remove();
-    directAudioIframe = null;
-  }
-
-  if (ytPlayer && ytPlayer.stopVideo) {
-    try {
-      ytPlayer.stopVideo();
-    } catch (e) {}
-  }
-}
-
-// ---------------------------------------------------------------------------
-// YouTube IFrame API Support (Behind Opaque Visual Curtain)
-// ---------------------------------------------------------------------------
-
-let ytApiLoaded = false;
-
-function ensureYouTubeApiLoaded() {
-  if (ytApiLoaded) return;
-  ytApiLoaded = true;
-
-  if (window.YT && window.YT.Player) {
-    ytReady = true;
-    return;
-  }
-
-  const tag = document.createElement('script');
-  tag.src = 'https://www.youtube.com/iframe_api';
-  const firstScriptTag = document.getElementsByTagName('script')[0];
-  if (firstScriptTag && firstScriptTag.parentNode) {
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-  } else {
-    document.head.appendChild(tag);
-  }
-
-  window.onYouTubeIframeAPIReady = () => {
-    ytReady = true;
-    initYouTubePlayer();
-  };
-}
-
-function initYouTubePlayer() {
-  const container = document.getElementById('youtube-player-mount');
-  if (!container) return;
-
-  ytPlayer = new window.YT.Player('youtube-player-mount', {
-    height: '200',
-    width: '200',
-    playerVars: {
-      autoplay: 1,
-      controls: 0,
-      disablekb: 1,
-      modestbranding: 1,
-      rel: 0,
-      playsinline: 1,
-      origin: window.location.origin,
-    },
-    events: {
-      onReady: () => {
-        if (isMuted && ytPlayer.mute) ytPlayer.mute();
-        if (pendingYouTubeCue) {
-          ytPlayer.cueVideoById(pendingYouTubeCue);
-        }
-        // Browsers allow muted autoplay but may block a delayed audible start.
-        // Prime the player now, then seek and unmute at the synchronized start.
-        if (currentSource && currentSource.type === 'youtube') {
-          ytPlayer.mute();
-          ytPlayer.playVideo();
-        }
-        if (pendingYouTubePlay !== null) {
-          const offset = pendingYouTubePlay;
-          pendingYouTubePlay = null;
-          playYouTube(offset);
-        }
-      },
-      onError: (e) => {
-        console.warn('YouTube Player error:', e);
-      },
-    },
-  });
-}
-
-function cueYouTube(videoId, startSeconds = 0) {
-  pendingYouTubeCue = { videoId, startSeconds };
-  if (!ytPlayer || !ytPlayer.cueVideoById) {
-    return;
-  }
-  ytPlayer.cueVideoById(pendingYouTubeCue);
-}
-
-function playYouTube(startOffsetSec = 0) {
-  if (!ytPlayer || !ytPlayer.seekTo || !ytPlayer.playVideo) {
-    pendingYouTubePlay = startOffsetSec;
-    return;
-  }
-  try {
-    if (isMuted) ytPlayer.mute();
-    else ytPlayer.unMute();
-    ytPlayer.seekTo(startOffsetSec, true);
-    ytPlayer.playVideo();
-  } catch (err) {
-    console.warn('YouTube playVideo failed:', err);
-    if (onAudioBlockedListener) onAudioBlockedListener(true);
   }
 }

@@ -6,11 +6,13 @@ Run with: python -m unittest discover -s tests
 
 import json
 import threading
+import tempfile
 import time
 import unittest
 import urllib.request
 import urllib.error
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 import library
 import main
@@ -30,6 +32,28 @@ class TestHttpIntegration(unittest.TestCase):
         cls.port = cls.server.server_address[1]
         cls.base_url = f"http://127.0.0.1:{cls.port}"
 
+        cls._original_playlists = library.PLAYLISTS
+        cls._original_audio_store = library.AUDIO_STORE
+        cls.audio_dir = tempfile.TemporaryDirectory()
+        playlist_id = "test-playlist"
+        audio_path = Path(cls.audio_dir.name) / "sample.mp3"
+        audio_path.write_bytes(bytes(range(256)) * 2)
+        cls.audio_path = audio_path
+        library.PLAYLISTS = [
+            library.Playlist(
+                id=playlist_id,
+                name="Test playlist",
+                tracks=[
+                    library.Track(
+                        id=1,
+                        title="Sample",
+                        playlist_id=playlist_id,
+                    )
+                ],
+            )
+        ]
+        library.AUDIO_STORE = {"1": audio_path}
+
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
         cls.thread.start()
         time.sleep(0.05)
@@ -39,6 +63,9 @@ class TestHttpIntegration(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
         cls.thread.join(timeout=1.0)
+        library.PLAYLISTS = cls._original_playlists
+        library.AUDIO_STORE = cls._original_audio_store
+        cls.audio_dir.cleanup()
 
     def _request(self, path: str, method: str = "GET", data: dict = None, headers: dict = None) -> tuple[int, dict, dict]:
         url = f"{self.base_url}{path}"
@@ -81,7 +108,7 @@ class TestHttpIntegration(unittest.TestCase):
         status, lib_res, _ = self._request("/api/library")
         self.assertEqual(status, 200)
         self.assertIsInstance(lib_res, list)
-        self.assertTrue(any(item["id"] == "bread-demo" for item in lib_res))
+        self.assertEqual(lib_res, [{"id": "test-playlist", "name": "Test playlist"}])
 
         # 3. Host creates lobby
         status, host_res, _ = self._request("/api/host", method="POST", data={"name": "Alice"})
@@ -106,24 +133,26 @@ class TestHttpIntegration(unittest.TestCase):
 
         # 6. Audio Range Request: test HTTP 206 Partial Content
         req = urllib.request.Request(
-            f"{self.base_url}/audio/sunrise",
+            f"{self.base_url}/audio/1",
             headers={"Range": "bytes=0-99"}
         )
         with urllib.request.urlopen(req) as resp:
             self.assertEqual(resp.status, 206)
-            self.assertEqual(resp.headers.get("Content-Range"), f"bytes 0-99/{len(library.get_audio_bytes('sunrise'))}")
+            self.assertEqual(resp.headers.get("Content-Range"), f"bytes 0-99/{self.audio_path.stat().st_size}")
+            self.assertEqual(resp.headers.get("Content-Type"), "audio/mpeg")
             self.assertEqual(len(resp.read()), 100)
 
         # 7. Start Round
         status, round_res, _ = self._request(
             f"/api/game/{code}/round",
             method="POST",
-            data={"mode": "buzzer", "playlist_id": "bread-demo"},
+            data={"mode": "buzzer", "playlist_id": "test-playlist"},
             headers={"X-Player-Token": host_token}
         )
         self.assertEqual(status, 200)
         round_info = round_res["snapshot"]["round"]
         self.assertEqual(round_info["phase"], "countdown")
+        self.assertEqual(round_info["source"], {"type": "audio", "id": "1"})
 
 
 if __name__ == "__main__":

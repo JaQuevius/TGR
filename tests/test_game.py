@@ -26,6 +26,28 @@ class FakeClock:
 
 
 class TestBuzzerRules(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._original_playlists = library.PLAYLISTS
+        cls.playlist_id = "test-playlist"
+        library.PLAYLISTS = [
+            library.Playlist(
+                id=cls.playlist_id,
+                name="Test playlist",
+                tracks=[
+                    library.Track(
+                        id=1,
+                        title="Test Track",
+                        playlist_id=cls.playlist_id,
+                    )
+                ],
+            )
+        ]
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        library.PLAYLISTS = cls._original_playlists
+
     def setUp(self) -> None:
         self.clock = FakeClock(1_000_000)
         self.store = game.GameStore(clock_fn=self.clock)
@@ -43,17 +65,18 @@ class TestBuzzerRules(unittest.TestCase):
 
     def test_no_title_or_answer_text_before_reveal(self) -> None:
         """Requirement: No title/answer text leaks before reveal."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.p1_token)
         round_info = snap["round"]
         self.assertIsNotNone(round_info)
         self.assertNotIn("title", round_info)
         self.assertNotIn("artist", round_info)
+        self.assertEqual(round_info["source"], {"type": "audio", "id": "1"})
         self.assertIsNone(round_info.get("reveal"))
 
     def test_earlier_stamped_buzz_inside_lock_window_wins(self) -> None:
         """Headline rule: B stamps earlier while offline, arrives inside A's lock window; B wins floor."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         start_at = snap["round"]["start_at"]
 
@@ -84,7 +107,7 @@ class TestBuzzerRules(unittest.TestCase):
 
     def test_buzz_arriving_after_lock_closed_gives_late(self) -> None:
         """Rule: A buzz received after lock closed gives 'late' and NEVER revises awarded floor."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         start_at = snap["round"]["start_at"]
 
@@ -111,7 +134,7 @@ class TestBuzzerRules(unittest.TestCase):
 
     def test_duplicate_buzz_id_is_idempotent(self) -> None:
         """Rule: duplicate buzz_id returns prior outcome without re-evaluation."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         start_at = snap["round"]["start_at"]
         self.clock.current = float(start_at + 500)
@@ -122,7 +145,7 @@ class TestBuzzerRules(unittest.TestCase):
 
     def test_timestamp_clamping(self) -> None:
         """Rule: future clamp, backdate clamp, early slack clamp."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         start_at = snap["round"]["start_at"]
 
@@ -139,7 +162,7 @@ class TestBuzzerRules(unittest.TestCase):
 
     def test_one_buzz_per_player(self) -> None:
         """Rule: one buzz per player per locking window/race."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         start_at = snap["round"]["start_at"]
         self.clock.current = float(start_at + 500)
@@ -153,7 +176,7 @@ class TestBuzzerRules(unittest.TestCase):
 
     def test_correct_answer_awards_100_and_reveals(self) -> None:
         """Rule: correct answer gives +100 and reveal."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         round_id = snap["round"]["round_id"]
         start_at = snap["round"]["start_at"]
@@ -173,15 +196,16 @@ class TestBuzzerRules(unittest.TestCase):
         self.assertEqual(res["outcome"]["status"], "correct")
         self.assertEqual(res["outcome"]["points"], 100)
 
-        # Snapshot should now be revealed with title & artist
+        # Snapshot should now be revealed with the title
         snap_revealed = self.store.snapshot(self.code, self.host_token)
         self.assertEqual(snap_revealed["round"]["phase"], "revealed")
         self.assertEqual(snap_revealed["round"]["reveal"]["title"], correct_title)
+        self.assertNotIn("artist", snap_revealed["round"]["reveal"])
         self.assertEqual(snap_revealed["players"][0]["score"], 100)
 
     def test_wrong_answer_penalizes_50_and_reopens_floor(self) -> None:
         """Rule: wrong answer = -50, eliminated, floor reopens if time remains."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         round_id = snap["round"]["round_id"]
         start_at = snap["round"]["start_at"]
@@ -210,7 +234,7 @@ class TestBuzzerRules(unittest.TestCase):
     def test_answer_timeout_connected_vs_disconnected_holder(self) -> None:
         """Rule: Connected holder timed out = -50. Disconnected holder = 0 penalty."""
         # Scenario A: Connected holder times out
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         round_id = snap["round"]["round_id"]
         start_at = snap["round"]["start_at"]
@@ -233,7 +257,7 @@ class TestBuzzerRules(unittest.TestCase):
 
         # Scenario B: Disconnected holder times out
         # Start a new round
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap2 = self.store.snapshot(self.code, self.host_token)
         round_id2 = snap2["round"]["round_id"]
         start_at2 = snap2["round"]["start_at"]
@@ -254,7 +278,7 @@ class TestBuzzerRules(unittest.TestCase):
 
     def test_nobody_buzzes_reveals_after_straggler_window(self) -> None:
         """Rule: if nobody buzzes by buzz_close, wait LOCK_MS for stragglers then reveal."""
-        self.store.start_round(self.code, self.host_token, "buzzer", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "buzzer", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         buzz_close = snap["round"]["buzz_close"]
 
@@ -285,7 +309,7 @@ class TestBuzzerRules(unittest.TestCase):
 
     def test_race_mode_regression(self) -> None:
         """Rule: race mode functions without regressions, awarding 100, 80, 60."""
-        self.store.start_round(self.code, self.host_token, "race", "bread-demo")
+        self.store.start_round(self.code, self.host_token, "race", self.playlist_id)
         snap = self.store.snapshot(self.code, self.host_token)
         round_id = snap["round"]["round_id"]
         start_at = snap["round"]["start_at"]

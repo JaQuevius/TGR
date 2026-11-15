@@ -20,6 +20,9 @@ import time
 import urllib.request
 import urllib.error
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import library
+
 BASE_URL = os.environ.get("SOUNDBITE_TEST_URL", "http://127.0.0.1:8000")
 
 
@@ -52,6 +55,10 @@ def log_step(name: str):
 
 def main():
     print(f"Running end-to-end multi-client scenario verification against {BASE_URL}...")
+    playlist = next((pl for pl in library.PLAYLISTS if pl.tracks), None)
+    if not playlist:
+        raise RuntimeError("Add at least one audio file inside a playlist folder under static/audio.")
+    playlist_id = playlist.id
 
     # -------------------------------------------------------------------------
     # Scenario 1: Host + 2 Players in Separate Sessions
@@ -84,7 +91,7 @@ def main():
     status, start_res = request(
         f"/api/game/{code}/round",
         method="POST",
-        data={"mode": "buzzer", "playlist_id": "bread-demo"},
+        data={"mode": "buzzer", "playlist_id": playlist_id},
         token=host_token,
     )
     assert status == 200
@@ -151,14 +158,11 @@ def main():
     assert floor["pid"] == pb_pid, f"Expected Player B ({pb_pid}) to win floor, but got {floor['pid']}"
     print(f"  🎉 SUCCESS: Player B won the floor by timestamp! (Holder: {floor['name']})")
 
-    # Match title from source id without leaking title in snapshot
+    # Look up the selected file locally without exposing its title in snapshots.
     audio_id = snap_lock_end["round"]["source"]["id"]
-    track_titles = {
-        "sunrise": "Sunrise on Sourdough",
-        "midnight": "Midnight at the Bakery",
-        "jams": "Jam on Toast",
-    }
-    answer_text = track_titles.get(audio_id, "Sunrise on Sourdough")
+    audio_path = library.get_audio_path(audio_id)
+    assert audio_path is not None, f"No audio file found for track ID {audio_id}"
+    answer_text = audio_path.stem
 
     # Player B submits answer
     answer_res = request(
@@ -179,7 +183,7 @@ def main():
     status, r2_res = request(
         f"/api/game/{code}/round",
         method="POST",
-        data={"mode": "buzzer", "playlist_id": "bread-demo"},
+        data={"mode": "buzzer", "playlist_id": playlist_id},
         token=host_token,
     )
     r2_id = r2_res["snapshot"]["round"]["round_id"]

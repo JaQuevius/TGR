@@ -241,7 +241,7 @@ class GameStore:
                     "buzz_close": round_state.buzz_close,
                     "playlist_id": round_state.playlist_id,
                     "reverse_audio": round_state.reverse_audio,
-                    "source": round_state.track.source,  # source only, NEVER title/artist
+                    "source": library.track_source(round_state.track, game["code"]),  # source only, NEVER title
                     "events": list(round_state.events),
                     "winner": round_state.winner_pid,
                 }
@@ -273,7 +273,6 @@ class GameStore:
                         winner_name = game["players"][round_state.winner_pid].name
                     round_data["reveal"] = {
                         "title": round_state.track.title,
-                        "artist": round_state.track.artist,
                         "winner": winner_name,
                     }
 
@@ -306,7 +305,7 @@ class GameStore:
                 raise ValueError("Only the host can start a round.")
 
             # Validate playlist and pick track
-            if playlist_id == "player-uploads":
+            if playlist_id == library.UPLOADS_PLAYLIST_ID:
                 available_uploads = [
                     item["track"]
                     for item in game["uploads"].values()
@@ -364,7 +363,7 @@ class GameStore:
             game, _player = self._get_game_and_player(code, token)
             playlists = library.get_playlists_catalog()
             if game["uploads"]:
-                playlists.append({"id": "player-uploads", "name": "Player uploads"})
+                playlists.append({"id": library.UPLOADS_PLAYLIST_ID, "name": "Player uploads"})
             return playlists
 
     def upload_track(
@@ -393,13 +392,7 @@ class GameStore:
             track = library.Track(
                 id=track_id,
                 title=title,
-                artist=f"Uploaded by {player.name}",
-                aliases=[title, os.path.splitext(os.path.basename(filename))[0]],
-                source={
-                    "type": "audio",
-                    "id": track_id,
-                    "url": f"/api/game/{code}/audio/{track_id}",
-                },
+                playlist_id=library.UPLOADS_PLAYLIST_ID,
             )
             game["uploads"][track_id] = {
                 "track": track,
@@ -795,7 +788,7 @@ class GameStore:
                 "buzz_close": round_state.buzz_close,
                 "playlist_id": round_state.playlist_id,
                 "reverse_audio": round_state.reverse_audio,
-                "source": round_state.track.source,
+                "source": library.track_source(round_state.track, game["code"]),
                 "events": list(round_state.events),
                 "winner": round_state.winner_pid,
             }
@@ -825,7 +818,6 @@ class GameStore:
                     winner_name = game["players"][round_state.winner_pid].name
                 round_data["reveal"] = {
                     "title": round_state.track.title,
-                    "artist": round_state.track.artist,
                     "winner": winner_name,
                 }
 
