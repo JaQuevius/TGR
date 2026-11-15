@@ -620,7 +620,8 @@ class GameStore:
 
                 is_correct = library.matches_title(answer, rnd.track)
                 if not is_correct:
-                    outcome = {"status": "incorrect", "reason": "Not quite - keep trying"}
+                    # Typing Race: a wrong answer is free - keep guessing until time runs out
+                    outcome = {"status": "incorrect", "points": 0, "retry": True, "reason": "Not quite - keep trying"}
                     rnd.received_answer_ids[answer_id] = outcome
                     return {"outcome": outcome, "snapshot": self._snapshot_unlocked(game, player, now_ms)}
 
@@ -638,10 +639,8 @@ class GameStore:
                 if not rnd.winner_pid:
                     rnd.winner_pid = player.pid
 
-                # If all players answered correctly, finish
-                if len(rnd.race_answers) >= len(game["players"]):
-                    rnd.phase = "revealed"
-                    rnd.add_event("round_revealed", {"winner": player.name})
+                # Finish early once everyone has got it
+                self._reveal_race_if_everyone_done(game, rnd)
 
                 outcome = {"status": "correct", "points": points}
                 rnd.received_answer_ids[answer_id] = outcome
@@ -791,6 +790,16 @@ class GameStore:
             if now_ms >= rnd.buzz_close + LOCK_MS:
                 rnd.phase = "revealed"
                 rnd.add_event("round_revealed", {"winner": None})
+
+    def _reveal_race_if_everyone_done(self, game: Dict[str, Any], rnd: RoundState) -> None:
+        """Typing Race: reveal as soon as every player has answered correctly."""
+        if rnd.phase == "revealed":
+            return
+        correct = {ans["pid"] for ans in rnd.race_answers}
+        if all(p.pid in correct for p in game["players"].values()):
+            rnd.phase = "revealed"
+            winner = game["players"].get(rnd.winner_pid) if rnd.winner_pid else None
+            rnd.add_event("round_revealed", {"winner": winner.name if winner else None})
 
     def _handle_floor_timeout(
         self,

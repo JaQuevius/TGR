@@ -328,31 +328,44 @@ function scheduleAutomaticNextRound(round) {
 
   autoAdvanceRoundId = round.round_id;
   clearTimeout(autoAdvanceTimer);
-  autoAdvanceTimer = setTimeout(async () => {
-    const sentMode = activeRoundSettings ? activeRoundSettings.mode : null;
-    try {
-      const res = await api(`/api/game/${session.code}/round`, {
-        method: 'POST',
-        body: JSON.stringify({
-          mode: activeRoundSettings.mode,
-          playlist_id: activeRoundSettings.playlistId,
-          reverse_audio: activeRoundSettings.reverseAudio,
-          audio_effect: activeRoundSettings.audioEffect,
-          audio_rate: activeRoundSettings.audioRate,
-        }),
-      });
-      handleSnapshot(res.snapshot);
-      if (res.outcome === 'game_finished') {
-        // handleSnapshot above has already cleared activeRoundSettings, so use the mode we sent
-        $('lobby-error').textContent = sentMode === 'roulette'
-          ? "Every Music Roulette song has been played! Add more and start again."
-          : 'That playlist is finished. Start a new game whenever you are ready.';
-      }
-    } catch (err) {
-      $('answer-status').textContent = `Next song could not start: ${err.message}`;
-      autoAdvanceRoundId = null;
+  autoAdvanceTimer = setTimeout(() => startNextRound(round.round_id), 2000);
+}
+
+let nextRoundInFlight = false;
+
+/** Host: start the next song with the same settings (used by auto-advance and the Next Round button). */
+async function startNextRound(fromRoundId) {
+  if (!session.host || !activeRoundSettings || nextRoundInFlight) return;
+  // Only once per finished round, whichever of the timer / button gets there first
+  if (!lastSnapshot || !lastSnapshot.round || lastSnapshot.round.round_id !== fromRoundId) return;
+  nextRoundInFlight = true;
+  clearTimeout(autoAdvanceTimer);
+  autoAdvanceRoundId = fromRoundId;
+  const sentMode = activeRoundSettings.mode;
+  try {
+    const res = await api(`/api/game/${session.code}/round`, {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: activeRoundSettings.mode,
+        playlist_id: activeRoundSettings.playlistId,
+        reverse_audio: activeRoundSettings.reverseAudio,
+        audio_effect: activeRoundSettings.audioEffect,
+        audio_rate: activeRoundSettings.audioRate,
+      }),
+    });
+    handleSnapshot(res.snapshot);
+    if (res.outcome === 'game_finished') {
+      // handleSnapshot above has already cleared activeRoundSettings, so use the mode we sent
+      $('lobby-error').textContent = sentMode === 'roulette'
+        ? "Every Music Roulette song has been played! Add more and start again."
+        : 'That playlist is finished. Start a new game whenever you are ready.';
     }
-  }, 2000);
+  } catch (err) {
+    $('answer-status').textContent = `Next song could not start: ${err.message}`;
+    autoAdvanceRoundId = null;
+  } finally {
+    nextRoundInFlight = false;
+  }
 }
 
 function renderRound(round) {
@@ -403,6 +416,7 @@ function renderRound(round) {
   $('roulette-choices').classList.add('hidden');
 
   if (isRaceMode) {
+    // Typing Race: guess as many times as you like until time runs out
     $('buzz-btn').classList.add('hidden');
     $('answer-form').classList.remove('hidden');
     $('play-sound-btn').classList.remove('hidden');
@@ -709,7 +723,12 @@ function handleActionResolved(action, outcome, freshSnapshot) {
     if (outcome.status === 'correct') {
       $('answer-status').textContent = `Correct! +${outcome.points} points 🎉`;
     } else if (outcome.status === 'incorrect') {
-      $('answer-status').textContent = `Wrong answer (${outcome.points} pts). Eliminated for this round.`;
+      // Typing Race: free retry. Buzzer: -50 and out for the round.
+      const isRace = outcome.retry || (lastSnapshot && lastSnapshot.round && lastSnapshot.round.mode === 'race');
+      $('answer-status').textContent = isRace
+        ? "❌ Not quite - you're NOT eliminated, keep guessing!"
+        : `❌ Wrong answer (${outcome.points} pts) - you're eliminated for this round.`;
+      if (isRace) $('answer-input').focus();
     } else if (outcome.status === 'timeout') {
       $('answer-status').textContent = 'Answer timed out.';
     }
@@ -814,9 +833,13 @@ function setupDomListeners() {
   };
 
   // Next Round Button on Reveal Card
+  // (It used to only switch to the lobby screen, which the next poll immediately undid.)
   $('btn-next-round').onclick = async () => {
-    // Re-open round setup in lobby or start next track directly
-    showScreen('lobby');
+    const round = lastSnapshot && lastSnapshot.round;
+    if (!round || round.phase !== 'revealed') return;
+    $('btn-next-round').disabled = true;
+    await startNextRound(round.round_id); // skip the 2-second wait
+    $('btn-next-round').disabled = false;
   };
 
   // End Game Button

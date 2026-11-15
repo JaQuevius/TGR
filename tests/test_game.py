@@ -329,6 +329,35 @@ class TestBuzzerRules(unittest.TestCase):
         self.assertEqual(res2["outcome"]["status"], "correct")
         self.assertEqual(res2["outcome"]["points"], 80)
 
+    def test_race_wrong_answer_is_free_and_you_can_retry(self) -> None:
+        """Rule: in Typing Race a wrong answer is NOT eliminating - no penalty, keep guessing."""
+        self.store.start_round(self.code, self.host_token, "race", self.playlist_id)
+        snap = self.store.snapshot(self.code, self.host_token)
+        round_id = snap["round"]["round_id"]
+        self.clock.current = float(snap["round"]["start_at"] + 100)
+        title = self.store._games[self.code]["round"].track.title
+        now = lambda: int(self.clock.current)
+
+        # Two wrong guesses: not eliminated, no points lost
+        for attempt in ("w1", "w2"):
+            res = self.store.submit_answer(self.code, self.p1_token, round_id, attempt, "Totally Wrong", now())
+            self.assertEqual(res["outcome"]["status"], "incorrect")
+            self.assertTrue(res["outcome"]["retry"])
+            p1 = next(p for p in res["snapshot"]["players"] if p["pid"] == self.p1_pid)
+            self.assertFalse(p1["eliminated"])
+            self.assertEqual(p1["score"], 0)
+            self.assertEqual(res["snapshot"]["round"]["phase"], "open")
+
+        # ...and the right answer still counts afterwards
+        res = self.store.submit_answer(self.code, self.p1_token, round_id, "w3", title, now())
+        self.assertEqual(res["outcome"]["status"], "correct")
+        self.assertEqual(res["outcome"]["points"], 100)
+
+        # Round reveals early once everyone has got it
+        self.store.submit_answer(self.code, self.host_token, round_id, "h1", title, now())
+        res = self.store.submit_answer(self.code, self.p2_token, round_id, "p2", title, now())
+        self.assertEqual(res["snapshot"]["round"]["phase"], "revealed")
+
 
 if __name__ == "__main__":
     unittest.main()
