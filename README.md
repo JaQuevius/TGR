@@ -1,13 +1,16 @@
-# 🥪 Soundwich: Server-Authoritative Buzzer Mode (Flaky Connection Resilient)
+# 🥪 Soundwich:
 
-Soundwich is a real-time multiplayer music-guessing party game: a host creates a room with a 4-digit code, friends join on their phones, and each round plays a short soundwich.
 
+Soundwich is a real-time multiplayer music-based guessing party game: a host creates a room with a 4-digit code, friends join on their phones by either typing in the code or using our QR code (that we are unnecessarily proud of). There are multiple gamemodes: 
+ - Buzzer, where you can claim the floor and type in an answer the name of the song before your opponents do.
+ - Type Race, where whoever first submits the correct answer wins the round and gains the most    points.
+ - Music Roulette, where the aim is to guess the player who added the song that is playing.
 This implementation features a **server-authoritative buzzer mode** built to survive flaky mobile Wi-Fi, packet drops, and subway dead zones using an offline resilience model:
 > **A client that loses contact continues operating on its own** (NTP clock, countdown, audio, buzzing, typing), records what it did using server-synchronized timestamps, buffers actions into an outbox, and reconciles when it reconnects. The server decides outcomes by stamped time, not network arrival order, within a short grace window.
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
 ### 1. Requirements
 - Python 3.9+ (Standard Library only — zero `pip` dependencies!)
@@ -36,9 +39,9 @@ On startup, the server automatically detects and prints your LAN IP so phones ca
 
 ---
 
-## 🎮 How to Play
+## How to Play
 
-1. Open `http://localhost:8000` (or the LAN URL on your phone).
+1. Open the LAN URL (you should be on a private network, just anything but Durham networks).
 2. **Host**: Click **Create lobby** and share the 4-digit code.
 3. **Players**: Enter the 4-digit code and your name. (Joins are allowed at any time — late joiners can spectate the current round).
 4. **Choose Mode**:
@@ -47,14 +50,16 @@ On startup, the server automatically detects and prints your LAN IP so phones ca
    - **Audio playlists**: Each subfolder of `static/audio/` is a playlist; MP3 and WAV files inside it are tracks.
    - **Player uploads**: Any player can add MP3s from the lobby. The host can select the shared **Player uploads** playlist.
    - **Reversed**: Select reversed song direction to hear folder or uploaded MP3s backwards.
-   - **🎲 Music Roulette**: Players add MP3s from their phones in the lobby; they're saved on the host in `static/audio/Music roulette/<player name>/`. Each round plays a song from someone in the lobby and everyone else taps who they think uploaded it (one guess each; correct guesses score 100, 80, 60, 40 by order). The uploader sits that round out.
+   - **Sped-Up**: You can speed up the song to make it a tad difficult to recognise. The degree of how fast it will be depends on the next 10 minutes of work.
+   - **Slowed** You can slow down the song for the same difficulty effect as speeding.
+   - ** Music Roulette**: Players add MP3s from their phones in the lobby; they're saved on the host in `static/audio/Music roulette/<player name>/`. Each round plays a song from someone in the lobby and everyone else taps who they think uploaded it (one guess each; correct guesses score 100, 80, 60, 40 by order). The uploader sits that round out.
 5. **Multi-round Flow**: When the timer expires, the next song starts automatically. When the selected playlist is exhausted, the game returns everyone to the lobby. The host can also click **End Game** to return immediately.
 
 Uploaded MP3s are kept in memory and scoped to their lobby. Each file must be an MP3 no larger than 15 MB, with a maximum of 30 uploads per lobby.
 
 ---
 
-## 🛠 How to Demo Offline Buzzer Resilience (`?debug=1`)
+## How to Demo Offline Buzzer Resilience (`?debug=1`)
 
 To test or demo the headline offline scenario:
 1. Open two browser tabs or phones pointing to:
@@ -83,7 +88,7 @@ To test or demo the headline offline scenario:
 
 ---
 
-## ⏱ Timing Constants & Tuning
+## Timing Constants & Tuning
 
 All timing parameters are located at the top of [`game.py`](file:///c:/Users/richa/Durhack%202026/TGR/game.py) and can be overridden via environment variables:
 
@@ -100,7 +105,7 @@ All timing parameters are located at the top of [`game.py`](file:///c:/Users/ric
 
 ---
 
-## 🧪 Running the Automated Tests
+## Running the Automated Tests
 
 ### 1. Python Unit Tests (Mock Clock)
 Runs 14 unit and HTTP integration tests:
@@ -132,7 +137,7 @@ python tests/verify_scenarios.py
 
 ---
 
-## 🎵 Audio Architecture
+## Audio Architecture
 
 1. **Folder-based playlists**:
    - Each subfolder under `static/audio/` becomes a playlist.
@@ -143,7 +148,7 @@ python tests/verify_scenarios.py
 
 ---
 
-## 📁 Codebase Layout
+## Codebase Layout
 
 - [`main.py`](file:///c:/Users/richa/Durhack%202026/TGR/main.py): HTTP server, explicit MIME router, Range streaming, and API dispatcher.
 - [`game.py`](file:///c:/Users/richa/Durhack%202026/TGR/game.py): Pure game logic, GameStore, buzzer state machine, presence tracking, and snapshot filtering.
@@ -162,11 +167,11 @@ one frontend entry point, [`static/index.html`](file:///c:/Users/richa/Durhack%2
 
 ---
 
-## 👥 Authors
+## Authors
 - **Richard Okyne Ampah**
 - **Aakanksh Prabhu**
 - **Benjamin Woolsey**
 - **Danny Jordan**
 
-## 📄 License
+## License
 This project is licensed under the MIT License - see the LICENSE file for details.
