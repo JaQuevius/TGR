@@ -47,6 +47,7 @@ On startup, the server automatically detects and prints your LAN IP so phones ca
    - **Audio playlists**: Each subfolder of `static/audio/` is a playlist; MP3 and WAV files inside it are tracks.
    - **Player uploads**: Any player can add MP3s from the lobby. The host can select the shared **Player uploads** playlist.
    - **Reversed**: Select reversed song direction to hear folder or uploaded MP3s backwards.
+   - **🎲 Music Roulette**: Players add MP3s from their phones in the lobby; they're saved on the host in `static/audio/Music roulette/<player name>/`. Each round plays a song from someone in the lobby and everyone else taps who they think uploaded it (one guess each; correct guesses score 100, 80, 60, 40 by order). The uploader sits that round out.
 5. **Multi-round Flow**: When the timer expires, the next song starts automatically. When the selected playlist is exhausted, the game returns everyone to the lobby. The host can also click **End Game** to return immediately.
 
 Uploaded MP3s are kept in memory and scoped to their lobby. Each file must be an MP3 no larger than 15 MB, with a maximum of 30 uploads per lobby.

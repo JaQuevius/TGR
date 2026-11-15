@@ -32,6 +32,8 @@ LOBBY_IDLE_TIMEOUT_MS = int(os.environ.get("SOUNDBITE_LOBBY_IDLE_MS", "1800000")
 MAX_PLAYERS_PER_LOBBY = 12
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_UPLOADS_PER_LOBBY = 30
+MAX_ROULETTE_SONGS_PER_PLAYER = 30
+GAME_MODES = ("buzzer", "race", "roulette")
 
 CODE_PATTERN = re.compile(r"^\d{4}$")
 
@@ -60,7 +62,7 @@ class BuzzRecord:
 @dataclass
 class RoundState:
     round_id: str
-    mode: str  # "buzzer" or "race"
+    mode: str  # "buzzer", "race" or "roulette"
     track: library.Track
     playlist_id: str
     created_at: int
@@ -84,6 +86,10 @@ class RoundState:
 
     # Race-mode specific answers
     race_answers: List[Dict[str, Any]] = field(default_factory=list)
+
+    # Music Roulette: who uploaded the song, and everyone's "who was it?" guesses
+    owner_pid: Optional[str] = None
+    roulette_guesses: List[Dict[str, Any]] = field(default_factory=list)
 
     # Event log (last 30 events, each with sequential seq number)
     events: List[Dict[str, Any]] = field(default_factory=list)
@@ -142,6 +148,7 @@ class GameStore:
                 "round": None,
                 "played_track_ids": set(),
                 "uploads": {},
+                "lobby_mode": "race",  # mode picked in the host's dropdown, shared with every phone
                 "created_at": now_ms,
                 "last_active": now_ms,
             }
@@ -215,79 +222,7 @@ class GameStore:
             current_player.last_seen = now_ms
             game["last_active"] = now_ms
 
-            # Advance state machine before snapshot
-            self._advance_round(game, now_ms)
-
-            # Public players list (NO secret tokens leaked!)
-            players_data = []
-            for p in sorted(game["players"].values(), key=lambda x: (-x.score, x.name.lower())):
-                is_connected = (now_ms - p.last_seen) <= PRESENCE_MS
-                players_data.append({
-                    "pid": p.pid,
-                    "name": p.name,
-                    "score": p.score,
-                    "connected": is_connected,
-                    "eliminated": p.eliminated,
-                })
-
-            round_data = None
-            round_state: Optional[RoundState] = game["round"]
-            if round_state:
-                round_data = {
-                    "round_id": round_state.round_id,
-                    "mode": round_state.mode,
-                    "phase": round_state.phase,
-                    "start_at": round_state.start_at,
-                    "buzz_close": round_state.buzz_close,
-                    "playlist_id": round_state.playlist_id,
-                    "reverse_audio": round_state.reverse_audio,
-                    "source": library.track_source(round_state.track, game["code"]),  # source only, NEVER title
-                    "events": list(round_state.events),
-                    "winner": round_state.winner_pid,
-                }
-
-                if round_state.phase == "locking":
-                    round_data["lock_closes_at"] = round_state.lock_closes_at
-
-                if round_state.phase == "answering" and round_state.floor_pid:
-                    holder = game["players"].get(round_state.floor_pid)
-                    holder_connected = ((now_ms - holder.last_seen) <= PRESENCE_MS) if holder else False
-                    round_data["floor"] = {
-                        "pid": round_state.floor_pid,
-                        "name": holder.name if holder else "Unknown",
-                        "deadline": round_state.floor_deadline,
-                        "holder_connected": holder_connected,
-                    }
-
-                if round_state.mode == "race":
-                    # Safe race answers without exposing player IDs or answers
-                    round_data["race_answers"] = [
-                        {"name": item["name"], "points": item["points"]}
-                        for item in round_state.race_answers
-                    ]
-
-                # Reveal only when phase is "revealed"
-                if round_state.phase == "revealed":
-                    winner_name = None
-                    if round_state.winner_pid and round_state.winner_pid in game["players"]:
-                        winner_name = game["players"][round_state.winner_pid].name
-                    round_data["reveal"] = {
-                        "title": round_state.track.title,
-                        "winner": winner_name,
-                    }
-
-            return {
-                "server_time": now_ms,
-                "code": code,
-                "upload_count": len(game["uploads"]),
-                "players": players_data,
-                "me": {
-                    "pid": current_player.pid,
-                    "host": current_player.is_host,
-                    "name": current_player.name,
-                },
-                "round": round_data,
-            }
+            return self._snapshot_unlocked(game, current_player, now_ms)
 
     def start_round(
         self,
@@ -304,8 +239,29 @@ class GameStore:
             if not host.is_host:
                 raise ValueError("Only the host can start a round.")
 
+            mode = mode if mode in GAME_MODES else "buzzer"
+            game["lobby_mode"] = mode
+            owner_pid: Optional[str] = None
+
             # Validate playlist and pick track
-            if playlist_id == library.UPLOADS_PLAYLIST_ID:
+            if mode == "roulette":
+                # Music Roulette: a song from the folder of someone currently in this lobby
+                if len(game["players"]) < 2:
+                    raise ValueError("Music Roulette needs at least 2 players.")
+                playlist_id = library.ROULETTE_PLAYLIST_ID
+                names = [p.name for p in game["players"].values()]
+                pool = library.roulette_tracks_for(names)
+                if not pool:
+                    raise ValueError("Nobody in this lobby has added songs to Music Roulette yet.")
+                available = [t for t in pool if t.id not in game["played_track_ids"]]
+                track = random.choice(available) if available else None
+                if track:
+                    owner_key = (library.roulette_owner_folder(track) or "").casefold()
+                    owner_pid = next(
+                        (p.pid for p in game["players"].values() if library.roulette_owner_key(p.name) == owner_key),
+                        None,
+                    )
+            elif playlist_id == library.UPLOADS_PLAYLIST_ID:
                 available_uploads = [
                     item["track"]
                     for item in game["uploads"].values()
@@ -338,7 +294,7 @@ class GameStore:
 
             new_round = RoundState(
                 round_id=uuid.uuid4().hex[:8],
-                mode=mode if mode in ("buzzer", "race") else "buzzer",
+                mode=mode,
                 track=track,
                 playlist_id=playlist_id,
                 created_at=now_ms,
@@ -346,6 +302,7 @@ class GameStore:
                 buzz_close=buzz_close,
                 phase="countdown",
                 reverse_audio=bool(reverse_audio),
+                owner_pid=owner_pid,
             )
             new_round.add_event("round_started", {
                 "mode": new_round.mode,
@@ -357,6 +314,19 @@ class GameStore:
             game["last_active"] = now_ms
 
             return {"outcome": "round_started", "snapshot": self._snapshot_unlocked(game, host, now_ms)}
+
+    def set_lobby_mode(self, code: str, token: str, mode: str) -> Dict[str, Any]:
+        """Host changed the Game Mode dropdown; tell every phone (e.g. to show the Music Roulette card)."""
+        with self._lock:
+            now_ms = self.now()
+            game, host = self._get_game_and_player(code, token)
+            if not host.is_host:
+                raise ValueError("Only the host can change the game mode.")
+            if mode not in GAME_MODES:
+                raise ValueError("Unknown game mode.")
+            game["lobby_mode"] = mode
+            game["last_active"] = now_ms
+            return {"outcome": "mode_set", "snapshot": self._snapshot_unlocked(game, host, now_ms)}
 
     def get_game_library(self, code: str, token: str) -> List[Dict[str, str]]:
         with self._lock:
@@ -402,6 +372,36 @@ class GameStore:
             }
             game["last_active"] = now_ms
             return {"track_id": track_id, "title": title, "upload_count": len(game["uploads"])}
+
+    def upload_roulette_track(
+        self,
+        code: str,
+        token: str,
+        filename: str,
+        data: bytes,
+        content_type: str,
+    ) -> Dict[str, Any]:
+        """Saves a player's MP3 to static/audio/Music roulette/<player name>/ for Music Roulette."""
+        with self._lock:
+            now_ms = self.now()
+            game, player = self._get_game_and_player(code, token)
+            if not filename.lower().endswith(".mp3") or content_type not in ("audio/mpeg", "audio/mp3", "application/octet-stream"):
+                raise ValueError("Only MP3 files are supported.")
+            if not data:
+                raise ValueError("The uploaded MP3 is empty.")
+            if len(data) > MAX_UPLOAD_BYTES:
+                raise ValueError("Each MP3 must be 15 MB or smaller.")
+            if len(library.roulette_tracks_for([player.name])) >= MAX_ROULETTE_SONGS_PER_PLAYER:
+                raise ValueError(f"You already have {MAX_ROULETTE_SONGS_PER_PLAYER} songs in Music Roulette.")
+
+            track = library.add_roulette_track(player.name, filename, data)
+            player.last_seen = now_ms
+            game["last_active"] = now_ms
+            return {
+                "title": track.title,
+                "my_count": len(library.roulette_tracks_for([player.name])),
+                "lobby_count": len(library.roulette_tracks_for([p.name for p in game["players"].values()])),
+            }
 
     def get_uploaded_audio(self, code: str, token: str, track_id: str) -> Tuple[bytes, str]:
         with self._lock:
@@ -542,6 +542,54 @@ class GameStore:
                     "outcome": rnd.received_answer_ids[answer_id],
                     "snapshot": self._snapshot_unlocked(game, player, now_ms),
                 }
+
+            # -----------------------------------------------------------------
+            # Music Roulette: the answer is the pid of the player you think uploaded the song
+            # -----------------------------------------------------------------
+            if rnd.mode == "roulette":
+                def reject(reason: str) -> Dict[str, Any]:
+                    outcome = {"status": "rejected", "reason": reason, "roulette": True}
+                    rnd.received_answer_ids[answer_id] = outcome
+                    return {"outcome": outcome, "snapshot": self._snapshot_unlocked(game, player, now_ms)}
+
+                if rnd.phase != "open":
+                    return reject("Guessing is not open right now")
+                if player.pid == rnd.owner_pid:
+                    return reject("This is your song - sit back and watch them guess!")
+                if any(g["pid"] == player.pid for g in rnd.roulette_guesses):
+                    return reject("You already locked in a guess this round")
+                guessed = game["players"].get(answer.strip())
+                if not guessed:
+                    return reject("Pick one of the players in the lobby")
+
+                is_correct = guessed.pid == rnd.owner_pid
+                points = 0
+                if is_correct:
+                    placement = sum(1 for g in rnd.roulette_guesses if g["correct"])
+                    points = max(40, 100 - placement * 20)
+                    player.score += points
+                    if not rnd.winner_pid:
+                        rnd.winner_pid = player.pid
+                rnd.roulette_guesses.append({
+                    "pid": player.pid,
+                    "name": player.name,
+                    "guess_pid": guessed.pid,
+                    "guess_name": guessed.name,
+                    "correct": is_correct,
+                    "points": points,
+                })
+                # Don't reveal right/wrong to others until the round ends
+                rnd.add_event("roulette_guess", {"name": player.name})
+
+                guessers = [p for p in game["players"].values() if p.pid != rnd.owner_pid]
+                if len(rnd.roulette_guesses) >= len(guessers):
+                    rnd.phase = "revealed"
+                    winner = game["players"].get(rnd.winner_pid) if rnd.winner_pid else None
+                    rnd.add_event("round_revealed", {"winner": winner.name if winner else None})
+
+                outcome = {"status": "correct" if is_correct else "incorrect", "points": points, "roulette": True}
+                rnd.received_answer_ids[answer_id] = outcome
+                return {"outcome": outcome, "snapshot": self._snapshot_unlocked(game, player, now_ms)}
 
             # -----------------------------------------------------------------
             # Race Mode Handling
@@ -812,6 +860,16 @@ class GameStore:
                     for item in round_state.race_answers
                 ]
 
+            if round_state.mode == "roulette":
+                my_guess = next((g for g in round_state.roulette_guesses if g["pid"] == player.pid), None)
+                round_data["roulette"] = {
+                    # Everyone in the lobby is a possible answer (clients hide themselves)
+                    "choices": [{"pid": p.pid, "name": p.name} for p in game["players"].values()],
+                    "guessed": [g["name"] for g in round_state.roulette_guesses],
+                    "you_uploaded": player.pid == round_state.owner_pid,
+                    "my_guess": my_guess["guess_pid"] if my_guess else None,
+                }
+
             if round_state.phase == "revealed":
                 winner_name = None
                 if round_state.winner_pid and round_state.winner_pid in game["players"]:
@@ -820,11 +878,23 @@ class GameStore:
                     "title": round_state.track.title,
                     "winner": winner_name,
                 }
+                if round_state.mode == "roulette":
+                    owner = game["players"].get(round_state.owner_pid) if round_state.owner_pid else None
+                    round_data["reveal"]["owner"] = owner.name if owner else library.roulette_owner_folder(round_state.track)
+                    round_data["reveal"]["guesses"] = [
+                        {"name": g["name"], "guess_name": g["guess_name"], "correct": g["correct"], "points": g["points"]}
+                        for g in round_state.roulette_guesses
+                    ]
 
+        lobby_names = [p.name for p in game["players"].values()]
         return {
             "server_time": now_ms,
             "code": game["code"],
             "upload_count": len(game["uploads"]),
+            "lobby_mode": game.get("lobby_mode", "race"),
+            # Music Roulette songs saved by players in this lobby (all, and just mine)
+            "roulette_count": len(library.roulette_tracks_for(lobby_names)),
+            "my_roulette_count": len(library.roulette_tracks_for([player.name])),
             "players": players_data,
             "me": {
                 "pid": player.pid,

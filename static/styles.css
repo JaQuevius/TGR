@@ -464,6 +464,43 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .reveal-card h3 { margin: 0; font-size: 20px; color: var(--crust); }
 
+/* ---------- Music Roulette ---------- */
+.roulette-count { margin-top: 12px; color: var(--muted); font-size: 14px; }
+.roulette-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+.roulette-choices .roulette-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 14px;
+  text-align: center;
+  color: var(--crust);
+  font-weight: 700;
+  background: var(--surface);
+  border: 2px dashed var(--line);
+  border-radius: 12px;
+}
+.roulette-choice {
+  padding: 16px 12px;
+  font-size: 17px;
+  border-radius: 14px;
+  overflow-wrap: anywhere;
+  transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+}
+.roulette-choice:not(:disabled):hover { transform: translateY(-3px); box-shadow: 0 6px 0 var(--btn-shadow); }
+.roulette-choice:not(:disabled):active { transform: translateY(2px) scale(.98); box-shadow: 0 1px 0 var(--btn-shadow); }
+.roulette-choice.picked { background: var(--orange); color: #fff; box-shadow: 0 3px 0 var(--crust); opacity: 1; }
+.roulette-choice:disabled:not(.picked) { opacity: .45; }
+.reveal-owner { margin: 6px 0 12px; font-size: 17px; font-weight: 700; color: var(--orange); }
+.reveal-owner ul { list-style: none; padding: 0; margin: 8px 0 0; font-size: 14px; font-weight: 500; color: var(--muted); }
+.reveal-owner li { margin: 3px 0; }
+@media (prefers-reduced-motion: reduce) {
+  .roulette-choice { transition: none; }
+}
+
 /* Debug Panel */
 .debug-panel {
   position: fixed;

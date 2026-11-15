@@ -158,15 +158,19 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
         path = parsed.path
 
         try:
-            upload_match = re.fullmatch(r"/api/game/(\d{4})/upload", path)
+            # /upload = in-memory lobby uploads; /roulette-upload = saved to Music roulette/<name>/
+            upload_match = re.fullmatch(r"/api/game/(\d{4})/(upload|roulette-upload)", path)
             if upload_match:
-                code = upload_match.group(1)
+                code, kind = upload_match.groups()
                 token = self.headers.get("X-Player-Token", "").strip()
                 if not token:
                     self._send_error("Missing X-Player-Token header.", HTTPStatus.UNAUTHORIZED)
                     return
                 filename, data, content_type = self._parse_multipart_upload()
-                result = STORE.upload_track(code, token, filename, data, content_type)
+                if kind == "roulette-upload":
+                    result = STORE.upload_roulette_track(code, token, filename, data, content_type)
+                else:
+                    result = STORE.upload_track(code, token, filename, data, content_type)
                 self._send_json(result)
                 return
 
@@ -190,7 +194,7 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
                 return
 
             # Match /api/game/<code>/<action>
-            match = re.fullmatch(r"/api/game/(\d{4})/(round|buzz|answer|finish|leave)", path)
+            match = re.fullmatch(r"/api/game/(\d{4})/(round|buzz|answer|finish|leave|mode)", path)
             if not match:
                 self._send_error("Not found.", HTTPStatus.NOT_FOUND)
                 return
@@ -222,6 +226,9 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
                 self._send_json(res)
             elif action == "finish":
                 res = STORE.finish_round(code, token)
+                self._send_json(res)
+            elif action == "mode":
+                res = STORE.set_lobby_mode(code, token, str(payload.get("mode", "")))
                 self._send_json(res)
             elif action == "leave":
                 res = STORE.leave_game(code, token)
@@ -379,8 +386,9 @@ def run_server(port: int = DEFAULT_PORT) -> None:
 
     print("🍞 ========================================================")
     print("🍞 Soundbite Party Game Server is running!")
-    print(f"🍞 Local URL: http://localhost:{port}")
-    print(f"🍞 Phone LAN: http://{lan_ip}:{port}")
+    #print(f"🍞 Local URL: http://localhost:{port}")
+    #print(f"🍞 Phone LAN: http://{lan_ip}:{port}")
+    print(f"🍞 Join this link: http://{lan_ip}:{port}")
     print("🍞 ========================================================")
 
     try:

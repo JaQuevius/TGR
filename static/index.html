@@ -98,6 +98,7 @@
         <select id="mode-select">
           <option value="race" selected>Typing Race (Everyone types)</option>
           <option value="buzzer">Buzzer Mode (Buzz & claim floor)</option>
+          <option value="roulette">🎲 Music Roulette (Guess who uploaded it)</option>
         </select>
 
         <label for="audio-direction-select">Song direction</label>
@@ -106,8 +107,11 @@
           <option value="reverse">Reversed</option>
         </select>
 
-        <label for="playlist-select">Song Library</label>
-        <select id="playlist-select"></select>
+        <div id="playlist-field">
+          <label for="playlist-select">Song Library</label>
+          <select id="playlist-select"></select>
+        </div>
+        <p id="roulette-mode-hint" class="hidden" style="margin:14px 0 0;">Songs come from everyone's Music Roulette uploads. Players guess who added each one.</p>
 
         <button class="wide" id="btn-start-round">Serve soundbite <span>▶</span></button>
         <div class="error" id="lobby-error"></div>
@@ -119,6 +123,17 @@
         <input id="mp3-files" type="file" accept=".mp3,audio/mpeg" multiple>
         <button class="wide" type="submit">Upload MP3s</button>
         <div class="error" id="upload-status"></div>
+      </form>
+
+      <!-- Music Roulette uploads: saved to static/audio/Music roulette/<your name>/ -->
+      <!-- Only shown while the host has Music Roulette selected -->
+      <form class="card hidden" id="roulette-form">
+        <h2>🎲 Music Roulette</h2>
+        <p>Add songs from your phone. When one plays, everyone else has to guess it was yours!</p>
+        <input id="roulette-files" type="file" accept=".mp3,audio/mpeg" multiple>
+        <button class="wide" type="submit">Add to Music Roulette</button>
+        <div class="roulette-count" id="roulette-count">You have 0 songs in Music Roulette.</div>
+        <div class="error" id="roulette-status"></div>
       </form>
 
       <!-- Player Waiting Card -->
@@ -165,11 +180,15 @@
           <button id="answer-submit-btn" type="submit">Submit</button>
         </form>
 
+        <!-- Music Roulette: tap the player you think uploaded this song -->
+        <div id="roulette-choices" class="roulette-choices hidden"></div>
+
         <div class="status" id="answer-status"></div>
 
         <!-- REVEAL CARD (Appears when round is revealed) -->
         <div id="reveal-card" class="reveal-card hidden">
           <h3 id="reveal-title">Song Title</h3>
+          <div id="reveal-owner" class="reveal-owner hidden"></div>
           <div id="reveal-winner" style="font-size:15px; font-weight:bold; color:var(--crust);"></div>
 
           <!-- Host Next Round Controls -->
@@ -226,6 +245,6 @@
 </main>
 
 <script src="vendor/qrcode.js"></script>
-<script type="module" src="app.js?v=16"></script>
+<script type="module" src="app.js?v=18"></script>
 </body>
 </html>

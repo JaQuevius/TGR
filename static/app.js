@@ -8,7 +8,7 @@
 import { syncClock, startClockSync, serverNow, getClockOffset, getLastRTT, absorbSnapshotTime } from './clock.js';
 import { Outbox, apiFetch, generateId, getConnectionState, onConnectionStateChange, debugConfig, setDebugOption } from './net.js';
 import { preloadAudio, schedulePlayback, stopAudio, isSoundMuted, setSoundMuted, unlockAudio, resumeAudio, setOnAudioBlocked } from './audio.js';
-import { attachButtonSfx } from './sfx.js';
+import { attachButtonSfx, playClick } from './sfx.js';
 
 // DOM Helper
 const $ = (id) => document.getElementById(id);
@@ -25,6 +25,8 @@ let hasBuzzedThisRound = false;
 let activeRoundSettings = null;
 let autoAdvanceRoundId = null;
 let autoAdvanceTimer = null;
+let rouletteGuessPid = null; // Music Roulette: my guess, shown instantly before the server confirms
+let rouletteRenderKey = '';  // avoids rebuilding the guess buttons on every poll
 // ---------------------------------------------------------------------------
 // Initialization & Session Management
 // ---------------------------------------------------------------------------
@@ -230,6 +232,8 @@ function handleSnapshot(snapshot) {
   if (session.host && uploadsChanged) loadPlaylists();
 
   renderPlayers(snapshot.players);
+  renderRouletteCount(snapshot);
+  if (snapshot.lobby_mode) applyLobbyMode(snapshot.lobby_mode);
 
   const round = snapshot.round;
   if (!round) {
@@ -251,7 +255,9 @@ function handleSnapshot(snapshot) {
   // Active or Revealed Round
   showScreen('game');
   $('game-code').textContent = session.code;
-  $('game-mode-badge').textContent = round.mode === 'race' ? 'Typing Race' : 'Buzzer';
+  const modeLabels = { race: 'Typing Race', buzzer: 'Buzzer', roulette: '🎲 Music Roulette' };
+  $('game-mode-badge').textContent = modeLabels[round.mode] || 'Buzzer';
+  $('round-heading').textContent = round.mode === 'roulette' ? 'Who uploaded this song?' : 'Name that sound';
 
   // Handle Round ID Change (Fresh Round)
   if (currentRoundId !== round.round_id) {
@@ -263,6 +269,8 @@ function handleSnapshot(snapshot) {
     };
     hasBuzzedThisRound = false;
     pendingEarlyAnswer = null;
+    rouletteGuessPid = null;
+    rouletteRenderKey = '';
     $('answer-input').value = '';
     $('answer-status').textContent = '';
     $('reveal-card').classList.add('hidden');
@@ -307,6 +315,7 @@ function scheduleAutomaticNextRound(round) {
   autoAdvanceRoundId = round.round_id;
   clearTimeout(autoAdvanceTimer);
   autoAdvanceTimer = setTimeout(async () => {
+    const sentMode = activeRoundSettings ? activeRoundSettings.mode : null;
     try {
       const res = await api(`/api/game/${session.code}/round`, {
         method: 'POST',
@@ -318,7 +327,10 @@ function scheduleAutomaticNextRound(round) {
       });
       handleSnapshot(res.snapshot);
       if (res.outcome === 'game_finished') {
-        $('lobby-error').textContent = 'That playlist is finished. Start a new game whenever you are ready.';
+        // handleSnapshot above has already cleared activeRoundSettings, so use the mode we sent
+        $('lobby-error').textContent = sentMode === 'roulette'
+          ? "Every Music Roulette song has been played! Add more and start again."
+          : 'That playlist is finished. Start a new game whenever you are ready.';
       }
     } catch (err) {
       $('answer-status').textContent = `Next song could not start: ${err.message}`;
@@ -340,6 +352,7 @@ function renderRound(round) {
         if (e.type === 'answer_correct') return `<div>🎉 <b>${escapeHtml(e.name || 'Someone')}</b> got it! (+${e.points})</div>`;
         if (e.type === 'answer_wrong') return `<div>❌ <b>${escapeHtml(e.name || 'Someone')}</b> missed (-50)</div>`;
         if (e.type === 'disconnected_timeout') return `<div>⏳ <b>${escapeHtml(e.name || 'Someone')}</b> disconnected without answering</div>`;
+        if (e.type === 'roulette_guess') return `<div>🎲 <b>${escapeHtml(e.name || 'Someone')}</b> locked in a guess</div>`;
         return '';
       })
       .filter(Boolean)
@@ -351,17 +364,28 @@ function renderRound(round) {
     $('reveal-card').classList.remove('hidden');
     $('reveal-title').textContent = round.reveal.title;
     $('reveal-winner').textContent = round.reveal.winner ? `🏆 Won by ${round.reveal.winner}` : 'No one got it this round!';
+    renderRouletteReveal(round);
     $('host-next-controls').classList.toggle('hidden', !session.host);
     $('buzz-btn').classList.add('hidden');
     $('answer-form').classList.add('hidden');
+    $('roulette-choices').classList.add('hidden');
     $('play-sound-btn').classList.add('hidden');
     scheduleAutomaticNextRound(round);
     return;
   }
 
   // -------------------------------------------------------------------------
-  // Buzzer vs Race Mode UI Controls
+  // Music Roulette vs Buzzer vs Race Mode UI Controls
   // -------------------------------------------------------------------------
+  if (round.mode === 'roulette') {
+    $('buzz-btn').classList.add('hidden');
+    $('answer-form').classList.add('hidden');
+    $('play-sound-btn').classList.remove('hidden');
+    renderRouletteChoices(round);
+    return;
+  }
+  $('roulette-choices').classList.add('hidden');
+
   if (isRaceMode) {
     $('buzz-btn').classList.add('hidden');
     $('answer-form').classList.remove('hidden');
@@ -444,6 +468,79 @@ function renderRound(round) {
     setBuzzerState('waiting', 'Round Over', true);
     $('answer-form').classList.add('hidden');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Music Roulette
+// ---------------------------------------------------------------------------
+
+function renderRouletteChoices(round) {
+  const box = $('roulette-choices');
+  box.classList.remove('hidden');
+  const info = round.roulette || {};
+  const myGuess = info.my_guess || rouletteGuessPid;
+  const isOpen = round.phase === 'open';
+
+  // Only rebuild the buttons when something that affects them changes
+  const key = JSON.stringify([info.you_uploaded, myGuess, isOpen, info.choices]);
+  if (key === rouletteRenderKey) return;
+  rouletteRenderKey = key;
+
+  if (info.you_uploaded) {
+    box.innerHTML = `<p class="roulette-note">🎧 This one's yours! Sit back while everyone guesses.</p>`;
+    return;
+  }
+
+  const choices = (info.choices || []).filter((c) => c.pid !== session.pid);
+  box.innerHTML = choices
+    .map((c) => {
+      const picked = c.pid === myGuess;
+      const disabled = !isOpen || Boolean(myGuess);
+      return `<button type="button" class="roulette-choice${picked ? ' picked' : ''}" data-pid="${escapeHtml(c.pid)}"${disabled ? ' disabled' : ''}>${picked ? '👉 ' : ''}${escapeHtml(c.name)}</button>`;
+    })
+    .join('');
+
+  box.querySelectorAll('.roulette-choice').forEach((btn) => {
+    btn.onclick = () => submitRouletteGuess(btn.dataset.pid, btn.textContent.trim());
+  });
+
+  const waitMsg = 'Listen first - guessing opens when the song starts.';
+  if (!myGuess && round.phase === 'countdown') {
+    $('answer-status').textContent = waitMsg;
+  } else if ($('answer-status').textContent === waitMsg) {
+    $('answer-status').textContent = '';
+  }
+}
+
+function submitRouletteGuess(pid, name) {
+  if (rouletteGuessPid || !lastSnapshot || !lastSnapshot.round) return;
+  unlockAudio();
+  playClick();
+  rouletteGuessPid = pid;
+  rouletteRenderKey = '';
+  renderRouletteChoices(lastSnapshot.round);
+  submitAnswerNow(pid); // goes through the offline-safe outbox like any answer
+  $('answer-status').textContent = `Locked in: ${name}. Waiting for the reveal...`;
+}
+
+function renderRouletteReveal(round) {
+  const el = $('reveal-owner');
+  if (round.mode !== 'roulette' || !round.reveal || !round.reveal.owner) {
+    el.classList.add('hidden');
+    return;
+  }
+  const guesses = (round.reveal.guesses || [])
+    .map((g) => `<li>${g.correct ? '✅' : '❌'} <b>${escapeHtml(g.name)}</b> guessed ${escapeHtml(g.guess_name)}${g.points ? ` (+${g.points})` : ''}</li>`)
+    .join('');
+  el.innerHTML = `🎲 Uploaded by ${escapeHtml(round.reveal.owner)}${guesses ? `<ul>${guesses}</ul>` : '<ul><li>Nobody guessed in time!</li></ul>'}`;
+  el.classList.remove('hidden');
+}
+
+function renderRouletteCount(snapshot) {
+  if (!$('roulette-count') || snapshot.my_roulette_count === undefined) return;
+  const mine = snapshot.my_roulette_count;
+  const all = snapshot.roulette_count || 0;
+  $('roulette-count').textContent = `You have ${mine} song${mine === 1 ? '' : 's'} in Music Roulette · ${all} in this lobby`;
 }
 
 function setBuzzerState(stateClass, label, disabled) {
@@ -577,6 +674,20 @@ function handleActionResolved(action, outcome, freshSnapshot) {
     } else if (outcome.status === 'rejected') {
       $('answer-status').textContent = outcome.reason || 'Buzz rejected.';
       hasBuzzedThisRound = false;
+    }
+  } else if (action.type === 'answer' && outcome.roulette) {
+    if (outcome.status === 'correct') {
+      $('answer-status').textContent = `✅ You got it! +${outcome.points} points`;
+    } else if (outcome.status === 'incorrect') {
+      $('answer-status').textContent = '❌ Not them! Wait for the reveal...';
+    } else if (outcome.status === 'rejected') {
+      $('answer-status').textContent = outcome.reason || 'Guess not accepted.';
+      // Let them try again if the guess never counted (e.g. sent before guessing opened)
+      if (lastSnapshot && lastSnapshot.round && !(lastSnapshot.round.roulette || {}).my_guess) {
+        rouletteGuessPid = null;
+        rouletteRenderKey = '';
+        renderRound(lastSnapshot.round);
+      }
     }
   } else if (action.type === 'answer') {
     if (outcome.status === 'correct') {
@@ -731,32 +842,82 @@ function setupDomListeners() {
 
   $('upload-form').onsubmit = async (event) => {
     event.preventDefault();
-    const files = Array.from($('mp3-files').files || []);
-    if (!files.length) {
-      $('upload-status').textContent = 'Choose at least one MP3 file.';
-      return;
-    }
-
-    $('upload-status').textContent = 'Uploading...';
-    try {
-      for (const file of files) {
-        const formData = new FormData();
-        formData.append('file', file, file.name);
-        const response = await fetch(`/api/game/${session.code}/upload`, {
-          method: 'POST',
-          headers: { 'X-Player-Token': session.token },
-          body: formData,
-        });
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Upload failed.');
-      }
-      $('upload-status').textContent = `${files.length} MP3${files.length === 1 ? '' : 's'} added to the lobby.`;
-      $('mp3-files').value = '';
+    const count = await uploadMp3s($('mp3-files'), 'upload', $('upload-status'));
+    if (count) {
+      $('upload-status').textContent = `${count} MP3${count === 1 ? '' : 's'} added to the lobby.`;
       if (session.host) await loadPlaylists();
-    } catch (err) {
-      $('upload-status').textContent = err.message;
     }
   };
+
+  // Music Roulette uploads: saved on the host laptop in Music roulette/<your name>/
+  $('roulette-form').onsubmit = async (event) => {
+    event.preventDefault();
+    const count = await uploadMp3s($('roulette-files'), 'roulette-upload', $('roulette-status'));
+    if (count) {
+      $('roulette-status').textContent = `${count} song${count === 1 ? '' : 's'} added to Music Roulette 🎲`;
+      await pollGame(); // refresh the song counts
+    }
+  };
+
+  // Host picks a mode: update this screen now, and tell the server so every phone follows
+  $('mode-select').onchange = async () => {
+    const mode = $('mode-select').value;
+    applyLobbyMode(mode);
+    if (session.local) return;
+    try {
+      const res = await api(`/api/game/${session.code}/mode`, {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      });
+      handleSnapshot(res.snapshot);
+    } catch (err) {
+      $('lobby-error').textContent = `Could not change mode: ${err.message}`;
+    }
+  };
+}
+
+/** Shows the Music Roulette card (for everyone) only when Music Roulette is the chosen mode. */
+function applyLobbyMode(mode) {
+  const roulette = mode === 'roulette';
+  $('roulette-form').classList.toggle('hidden', !roulette);
+  // Music Roulette doesn't use the song library dropdown
+  $('playlist-field').classList.toggle('hidden', roulette);
+  $('roulette-mode-hint').classList.toggle('hidden', !roulette);
+  // Keep the host's dropdown in step (e.g. after rejoining), unless they're using it right now
+  if ($('mode-select').value !== mode && document.activeElement !== $('mode-select')) {
+    $('mode-select').value = mode;
+  }
+}
+
+/** Uploads the chosen MP3s one by one. Returns how many succeeded (0 on error). */
+async function uploadMp3s(input, endpoint, statusEl) {
+  const files = Array.from(input.files || []);
+  if (!files.length) {
+    statusEl.textContent = 'Choose at least one MP3 file.';
+    return 0;
+  }
+
+  try {
+    let done = 0;
+    for (const file of files) {
+      statusEl.textContent = `Uploading ${done + 1} of ${files.length}...`;
+      const formData = new FormData();
+      formData.append('file', file, file.name);
+      const response = await fetch(`/api/game/${session.code}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'X-Player-Token': session.token },
+        body: formData,
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Upload failed.');
+      done += 1;
+    }
+    input.value = '';
+    return done;
+  } catch (err) {
+    statusEl.textContent = err.message;
+    return 0;
+  }
 }
 
 async function enterLobby() {
