@@ -1,4 +1,4 @@
-# 🥪 Soundwich: Server-Authoritative Buzzer Mode (Flaky Connection Resilient)
+# 🥪 Soundwich:
 
 
 Soundwich is a real-time multiplayer music-guessing party game: a host creates a room with a 4-digit code, friends join on their phones by either typing in the code or using our QR code (that we are unnecessarily proud of). There are multiple gamemodes: 
