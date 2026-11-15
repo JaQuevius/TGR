@@ -1,5 +1,5 @@
 /**
- * Soundbite Resilient Audio Controller
+ * Soundwich Resilient Audio Controller
  *
  * Handles offline-capable audio Blobs.
  * Synchronizes start time with serverNow() and provides user-gesture unlocking
@@ -111,6 +111,25 @@ export async function preloadAudio(source) {
     currentAudioElement = new Audio(audioUrl);
     currentAudioElement.muted = isMuted;
   }
+  applyPlaybackRate(currentAudioElement, source.rate);
+  // Some browsers (notably iPhone Safari) only load the song when it starts playing, and loading
+  // resets the speed to the default - so re-apply it once loaded and every time it starts playing.
+  const el = currentAudioElement;
+  const reapply = () => applyPlaybackRate(el, source.rate);
+  el.addEventListener('loadedmetadata', reapply);
+  el.addEventListener('play', reapply);
+  el.addEventListener('playing', reapply);
+}
+
+/** Sped up / slowed down: change speed AND pitch together (like nightcore / "slowed" edits). */
+function applyPlaybackRate(el, rate) {
+  if (!el) return;
+  const speed = rate || 1;
+  el.defaultPlaybackRate = speed; // survives the browser reloading the song
+  el.playbackRate = speed;
+  el.preservesPitch = false;
+  el.mozPreservesPitch = false;
+  el.webkitPreservesPitch = false;
 }
 
 /**
@@ -156,7 +175,9 @@ function startPlayback(startOffsetSec = 0) {
   if (!currentAudioElement) return;
 
   try {
-    currentAudioElement.currentTime = startOffsetSec;
+    // Joining late: at 1.5x speed, 4 real seconds in means 6 seconds into the song
+    currentAudioElement.currentTime = startOffsetSec * (currentSource.rate || 1);
+    applyPlaybackRate(currentAudioElement, currentSource.rate);
     currentAudioElement.muted = isMuted;
     const promise = currentAudioElement.play();
     if (promise !== undefined) {

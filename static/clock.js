@@ -1,5 +1,5 @@
 /**
- * Soundbite NTP-Style Clock Synchronization
+ * Soundwich NTP-Style Clock Synchronization
  *
  * DOM-free clock sync module that computes high-precision offset between
  * local performance.now() and server epoch milliseconds.

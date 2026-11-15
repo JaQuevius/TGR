@@ -1,4 +1,4 @@
-"""Soundbite Game Logic & Authoritative State Engine.
+"""Soundwich Game Logic & Authoritative State Engine.
 
 Thread-safe, dependency-free game state manager supporting both buzzer mode
 and race mode with offline-resilient timestamped event resolution.
@@ -34,6 +34,7 @@ MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_UPLOADS_PER_LOBBY = 30
 MAX_ROULETTE_SONGS_PER_PLAYER = 30
 GAME_MODES = ("buzzer", "race", "roulette")
+AUDIO_EFFECTS = ("normal", "reverse", "fast", "slow")
 
 CODE_PATTERN = re.compile(r"^\d{4}$")
 
@@ -70,6 +71,8 @@ class RoundState:
     buzz_close: int
     phase: str  # "countdown", "open", "locking", "answering", "revealed"
     reverse_audio: bool = False
+    audio_effect: str = "normal"  # "normal", "reverse", "fast" (sped up) or "slow" (slowed down)
+    audio_rate: float = 1.0       # playback speed chosen by the host for "fast" / "slow"
 
     # Buzzer-specific fields
     lock_closes_at: Optional[int] = None
@@ -231,6 +234,8 @@ class GameStore:
         mode: str,
         playlist_id: str,
         reverse_audio: bool = False,
+        audio_effect: str = "",
+        audio_rate: Optional[float] = None,
     ) -> Dict[str, Any]:
         """Host initiates a new round."""
         with self._lock:
@@ -238,6 +243,12 @@ class GameStore:
             game, host = self._get_game_and_player(code, token)
             if not host.is_host:
                 raise ValueError("Only the host can start a round.")
+
+            # Song direction / speed; older clients only send reverse_audio
+            if audio_effect not in AUDIO_EFFECTS:
+                audio_effect = "reverse" if reverse_audio else "normal"
+            reverse_audio = audio_effect == "reverse"
+            audio_rate = self._clean_audio_rate(audio_effect, audio_rate)
 
             mode = mode if mode in GAME_MODES else "buzzer"
             game["lobby_mode"] = mode
@@ -302,6 +313,8 @@ class GameStore:
                 buzz_close=buzz_close,
                 phase="countdown",
                 reverse_audio=bool(reverse_audio),
+                audio_effect=audio_effect,
+                audio_rate=audio_rate,
                 owner_pid=owner_pid,
             )
             new_round.add_event("round_started", {
@@ -836,6 +849,8 @@ class GameStore:
                 "buzz_close": round_state.buzz_close,
                 "playlist_id": round_state.playlist_id,
                 "reverse_audio": round_state.reverse_audio,
+                "audio_effect": round_state.audio_effect,
+                "audio_rate": round_state.audio_rate,
                 "source": library.track_source(round_state.track, game["code"]),
                 "events": list(round_state.events),
                 "winner": round_state.winner_pid,
@@ -920,6 +935,21 @@ class GameStore:
         ]
         for code in idle_codes:
             del self._games[code]
+
+    @staticmethod
+    def _clean_audio_rate(audio_effect: str, audio_rate: Any) -> float:
+        """Speed for Sped up (1.1x-2x, default 1.35x) / Slowed down (0.5x-0.9x, default 0.75x)."""
+        limits = {"fast": (1.1, 2.0, 1.35), "slow": (0.5, 0.9, 0.75)}
+        if audio_effect not in limits:
+            return 1.0
+        low, high, default = limits[audio_effect]
+        try:
+            rate = float(audio_rate)
+        except (TypeError, ValueError):
+            return default
+        if rate != rate:  # NaN
+            return default
+        return round(min(high, max(low, rate)), 2)
 
     @staticmethod
     def _clean_name(value: Any) -> str:

@@ -1,6 +1,6 @@
-# Soundbite Audio Clips Directory
+# Soundwich Audio Clips Directory
 
-# Soundbite Audio Clips Directory
+# Soundwich Audio Clips Directory
 
 Create one subfolder per playlist and put its audio files inside that folder.
 For example:

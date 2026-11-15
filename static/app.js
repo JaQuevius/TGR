@@ -1,5 +1,5 @@
 /**
- * Soundbite Client Controller
+ * Soundwich Client Controller
  *
  * Coordinates UI state, autonomous local round countdowns, resilient outbox flushing,
  * NTP clock sync, audio preloading, and server-authoritative buzzer racing.
@@ -25,6 +25,13 @@ let hasBuzzedThisRound = false;
 let activeRoundSettings = null;
 let autoAdvanceRoundId = null;
 let autoAdvanceTimer = null;
+// Song direction / speed options (Sped up and Slowed down also shift the pitch)
+const AUDIO_EFFECT_RATES = { normal: 1, reverse: 1, fast: 1.35, slow: 0.75 };
+// Slider settings for "how fast?" / "how slow?"
+const SPEED_SLIDERS = {
+  fast: { min: 1.1, max: 2, step: 0.05, value: 1.35, label: 'How fast?', minLabel: 'A little', maxLabel: 'Chipmunk 🐿️' },
+  slow: { min: 0.5, max: 0.9, step: 0.05, value: 0.75, label: 'How slow?', minLabel: 'Sloth 🦥', maxLabel: 'A little' },
+};
 let rouletteGuessPid = null; // Music Roulette: my guess, shown instantly before the server confirms
 let rouletteRenderKey = '';  // avoids rebuilding the guess buttons on every poll
 // ---------------------------------------------------------------------------
@@ -255,7 +262,7 @@ function handleSnapshot(snapshot) {
   // Active or Revealed Round
   showScreen('game');
   $('game-code').textContent = session.code;
-  const modeLabels = { race: 'Typing Race', buzzer: 'Buzzer', roulette: '🎲 Music Roulette' };
+  const modeLabels = { race: '⌨️ Typing Race', buzzer: '🔔 Buzzer', roulette: '🎲 Music Roulette' };
   $('game-mode-badge').textContent = modeLabels[round.mode] || 'Buzzer';
   $('round-heading').textContent = round.mode === 'roulette' ? 'Who uploaded this song?' : 'Name that sound';
 
@@ -266,6 +273,8 @@ function handleSnapshot(snapshot) {
       mode: round.mode,
       playlistId: round.playlist_id || $('playlist-select').value,
       reverseAudio: Boolean(round.reverse_audio),
+      audioEffect: round.audio_effect || (round.reverse_audio ? 'reverse' : 'normal'),
+      audioRate: round.audio_rate || null,
     };
     hasBuzzedThisRound = false;
     pendingEarlyAnswer = null;
@@ -277,7 +286,12 @@ function handleSnapshot(snapshot) {
 
     // Preload audio and schedule playback
     if (round.source) {
-      preloadAudio({ ...round.source, reverse: Boolean(round.reverse_audio), token: session.token });
+      preloadAudio({
+        ...round.source,
+        reverse: Boolean(round.reverse_audio),
+        rate: activeRoundSettings.audioRate || AUDIO_EFFECT_RATES[activeRoundSettings.audioEffect] || 1,
+        token: session.token,
+      });
       schedulePlayback(round.start_at, 12);
     }
   }
@@ -323,6 +337,8 @@ function scheduleAutomaticNextRound(round) {
           mode: activeRoundSettings.mode,
           playlist_id: activeRoundSettings.playlistId,
           reverse_audio: activeRoundSettings.reverseAudio,
+          audio_effect: activeRoundSettings.audioEffect,
+          audio_rate: activeRoundSettings.audioRate,
         }),
       });
       handleSnapshot(res.snapshot);
@@ -774,7 +790,8 @@ function setupDomListeners() {
     $('lobby-error').textContent = '';
     const mode = $('mode-select').value;
     const playlistId = $('playlist-select').value;
-    const reverseAudio = $('audio-direction-select').value === 'reverse';
+    const audioEffect = $('audio-direction-select').value; // normal | reverse | fast | slow
+    const reverseAudio = audioEffect === 'reverse';
     if (session.local) {
       $('lobby-error').textContent = 'Local demo lobby created. Start the Python server for shared rounds across devices.';
       return;
@@ -782,7 +799,13 @@ function setupDomListeners() {
     try {
       const res = await api(`/api/game/${session.code}/round`, {
         method: 'POST',
-        body: JSON.stringify({ mode, playlist_id: playlistId, reverse_audio: reverseAudio }),
+        body: JSON.stringify({
+          mode,
+          playlist_id: playlistId,
+          reverse_audio: reverseAudio,
+          audio_effect: audioEffect,
+          audio_rate: SPEED_SLIDERS[audioEffect] ? Number($('speed-range').value) : null,
+        }),
       });
       handleSnapshot(res.snapshot);
     } catch (err) {
@@ -873,6 +896,36 @@ function setupDomListeners() {
     } catch (err) {
       $('lobby-error').textContent = `Could not change mode: ${err.message}`;
     }
+  };
+
+  // Sped up / Slowed down: show a slider asking how fast or how slow
+  $('audio-direction-select').onchange = () => {
+    const cfg = SPEED_SLIDERS[$('audio-direction-select').value];
+    $('speed-field').classList.toggle('hidden', !cfg);
+    if (!cfg) return;
+    const slider = $('speed-range');
+    Object.assign(slider, { min: cfg.min, max: cfg.max, step: cfg.step });
+    slider.value = cfg.value;
+    $('speed-label').textContent = cfg.label;
+    $('speed-min-label').textContent = cfg.minLabel;
+    $('speed-max-label').textContent = cfg.maxLabel;
+    $('speed-value').textContent = `${Number(slider.value).toFixed(2)}×`;
+  };
+  $('speed-range').oninput = () => {
+    $('speed-value').textContent = `${Number($('speed-range').value).toFixed(2)}×`;
+  };
+
+  // 🎲 Random: pick any of the game modes at random, then apply it like a manual pick
+  $('btn-random-mode').onclick = () => {
+    const options = Array.from($('mode-select').options);
+    const choice = options[Math.floor(Math.random() * options.length)];
+    $('mode-select').value = choice.value;
+    $('mode-select').dispatchEvent(new Event('change'));
+    $('lobby-error').textContent = `🔀 Rolled: ${choice.textContent}`;
+    const btn = $('btn-random-mode');
+    btn.classList.remove('rolling');
+    void btn.offsetWidth; // restart the wobble animation
+    btn.classList.add('rolling');
   };
 }
 

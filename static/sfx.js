@@ -1,5 +1,5 @@
 /**
- * Soundbite UI sound effects (hover + click), generated with Web Audio.
+ * Soundwich UI sound effects (hover + click), generated with Web Audio.
  * No audio files needed. Respects the Sound ON/OFF toggle.
  */
 

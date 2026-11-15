@@ -1,5 +1,5 @@
 /**
- * Soundbite Outbox & Resilient Network Layer
+ * Soundwich Outbox & Resilient Network Layer
  *
  * DOM-free persistent outbox and connection manager.
  * Stores actions in sessionStorage BEFORE transmitting and retries with

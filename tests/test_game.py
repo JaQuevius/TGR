@@ -1,4 +1,4 @@
-"""Unit tests for Soundbite buzzer and race mode state machine with fake clock.
+"""Unit tests for Soundwich buzzer and race mode state machine with fake clock.
 
 Tests all buzzer rules, timing windows, presence, secret leaks, and race regressions.
 Run with: python -m unittest discover -s tests

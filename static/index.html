@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Soundbite — Toasty Music Guessing</title>
-  <!-- Tab icon: bread emoji -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8D%9E%3C/text%3E%3C/svg%3E">
+  <title>Soundwich — Toasty Music Guessing</title>
+  <!-- Tab icon: sandwich emoji -->
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A5%AA%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="styles.css">
   <!-- Apply the saved colour theme before the page draws (avoids a flash of the default theme) -->
   <script>
@@ -16,10 +16,10 @@
 <main>
   <!-- Global Top Header -->
   <header>
-    <div class="brand">🍞 sound<span>bite</span></div>
+    <div class="brand">🥪 sound<span>wich</span></div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
       <select id="theme-select" class="pill-btn" title="Colour theme" aria-label="Colour theme">
-        <option value="toast">🍞 Toast</option>
+        <option value="toast">🥪 Toast</option>
         <option value="midnight">🌙 Midnight</option>
         <option value="mint">🌿 Mint</option>
         <option value="berry">🍓 Berry</option>
@@ -39,7 +39,7 @@
     <div class="hero">
       <div class="eyebrow">a toasty music guessing game</div>
       <h1>Hear it. <em>Claim it.</em></h1>
-      <p>Play short soundbites, buzz in before your friends, and claim the floor to climb the scoreboard! </p>
+      <p>Play short soundwiches, compete with your friends, and claim the floor to climb the scoreboard! </p>
     </div>
 
     <!-- Rejoin previous session if available -->
@@ -95,17 +95,29 @@
         <h2>Round Setup</h2>
         <p>Choose the game mode, song direction and playlist for the upcoming round.</p>
         <label for="mode-select">Game Mode</label>
-        <select id="mode-select">
-          <option value="race" selected>Typing Race (Everyone types)</option>
-          <option value="buzzer">Buzzer Mode (Buzz & claim floor)</option>
-          <option value="roulette">🎲 Music Roulette (Guess who uploaded it)</option>
-        </select>
+        <div class="mode-row">
+          <select id="mode-select">
+            <option value="race" selected>⌨️ Typing Race (Everyone types)</option>
+            <option value="buzzer">🔔 Buzzer Mode (Buzz & claim floor)</option>
+            <option value="roulette">🎲 Music Roulette (Guess who uploaded it)</option>
+          </select>
+          <button type="button" id="btn-random-mode" class="secondary" title="Pick a random game mode">🔀 Random</button>
+        </div>
 
         <label for="audio-direction-select">Song direction</label>
         <select id="audio-direction-select">
           <option value="normal" selected>Normal</option>
           <option value="reverse">Reversed</option>
+          <option value="fast">Sped up</option>
+          <option value="slow">Slowed down</option>
         </select>
+
+        <!-- Only shown for Sped up / Slowed down: how fast or how slow -->
+        <div id="speed-field" class="speed-field hidden">
+          <label for="speed-range"><span id="speed-label">How fast?</span> <b id="speed-value">1.35×</b></label>
+          <input id="speed-range" type="range" min="1.1" max="2" step="0.05" value="1.35">
+          <div class="speed-ends"><span id="speed-min-label">A little</span><span id="speed-max-label">Chipmunk</span></div>
+        </div>
 
         <div id="playlist-field">
           <label for="playlist-select">Song Library</label>
@@ -113,7 +125,7 @@
         </div>
         <p id="roulette-mode-hint" class="hidden" style="margin:14px 0 0;">Songs come from everyone's Music Roulette uploads. Players guess who added each one.</p>
 
-        <button class="wide" id="btn-start-round">Serve soundbite <span>▶</span></button>
+        <button class="wide" id="btn-start-round">Serve soundwich <span>▶</span></button>
         <div class="error" id="lobby-error"></div>
       </div>
 
@@ -139,7 +151,7 @@
       <!-- Player Waiting Card -->
       <div class="card hidden" id="waiting-card">
         <h2>You're in.</h2>
-        <p>Wait for the host to serve the next soundbite.</p>
+        <p>Wait for the host to serve the next soundwich.</p>
         <div class="wave">♪ ♫ ♪</div>
       </div>
     </div>
@@ -162,7 +174,7 @@
       <div class="card">
         <h2 id="round-heading">Name that sound</h2>
 
-        <!-- Soundbite Audio Player -->
+        <!-- Soundwich Audio Player -->
         <div class="audio-box" id="audio-container">
           <div class="wave" id="audio-wave">♪ ♫ ♪</div>
           <div id="audio-status-hint" style="font-size:13px; color:var(--muted); margin-top:8px;">Listen closely...</div>
@@ -245,6 +257,6 @@
 </main>
 
 <script src="vendor/qrcode.js"></script>
-<script type="module" src="app.js?v=18"></script>
+<script type="module" src="app.js?v=22"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-"""Soundbite track and playlist library.
+"""Soundwich track and playlist library.
 
 Loads playlists and audio paths from folders under ``static/audio`` and
 provides title normalization for answer matching.

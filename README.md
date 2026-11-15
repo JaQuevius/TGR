@@ -1,6 +1,6 @@
-# 🍞 Soundbite: Server-Authoritative Buzzer Mode (Flaky Connection Resilient)
+# 🥪 Soundwich: Server-Authoritative Buzzer Mode (Flaky Connection Resilient)
 
-Soundbite is a real-time multiplayer music-guessing party game: a host creates a room with a 4-digit code, friends join on their phones, and each round plays a short soundbite.
+Soundwich is a real-time multiplayer music-guessing party game: a host creates a room with a 4-digit code, friends join on their phones, and each round plays a short soundwich.
 
 This implementation features a **server-authoritative buzzer mode** built to survive flaky mobile Wi-Fi, packet drops, and subway dead zones using an offline resilience model:
 > **A client that loses contact continues operating on its own** (NTP clock, countdown, audio, buzzing, typing), records what it did using server-synchronized timestamps, buffers actions into an outbox, and reconciles when it reconnects. The server decides outcomes by stamped time, not network arrival order, within a short grace window.
@@ -27,11 +27,11 @@ so players cannot synchronize.
 
 On startup, the server automatically detects and prints your LAN IP so phones can join directly:
 ```
-🍞 ========================================================
-🍞 Soundbite Party Game Server is running!
-🍞 Local URL: http://localhost:8000
-🍞 Phone LAN: http://192.168.1.150:8000
-🍞 ========================================================
+🥪 ========================================================
+🥪 Soundwich Party Game Server is running!
+🥪 Local URL: http://localhost:8000
+🥪 Phone LAN: http://192.168.1.150:8000
+🥪 ========================================================
 ```
 
 ---
@@ -64,7 +64,7 @@ To test or demo the headline offline scenario:
 2. In Tab 1, create a lobby as **Host**. Select a playlist discovered under `static/audio/` and **Buzzer mode**.
 3. In Tab 2, join as **Player B**.
 4. In Tab 3, join as **Player A**.
-5. Host clicks **Serve soundbite ▶**.
+5. Host clicks **Serve soundwich ▶**.
 
 ### The Headline Scenario:
 1. In Player B's tab, expand the debug panel in the bottom right corner and check **"Simulate Disconnected"**.

@@ -1,4 +1,4 @@
-"""Soundbite Server - Server-authoritative music party game.
+"""Soundwich Server - Server-authoritative music party game.
 
 Standard library Python only.
 Serves static assets, handles audio streaming (including Range requests for iOS Safari),
@@ -58,7 +58,7 @@ def get_lan_ip() -> str:
 
 
 class SoundbiteHandler(BaseHTTPRequestHandler):
-    server_version = "Soundbite/2.0"
+    server_version = "Soundwich/2.0"
 
     def log_message(self, format: str, *args: Any) -> None:
         # Suppress routine HTTP logs unless in verbose debugging
@@ -209,7 +209,9 @@ class SoundbiteHandler(BaseHTTPRequestHandler):
                 mode = str(payload.get("mode", "buzzer"))
                 playlist_id = str(payload.get("playlist_id", ""))
                 reverse_audio = bool(payload.get("reverse_audio", False))
-                res = STORE.start_round(code, token, mode, playlist_id, reverse_audio)
+                audio_effect = str(payload.get("audio_effect", ""))  # normal | reverse | fast | slow
+                audio_rate = payload.get("audio_rate")  # how fast / how slow (checked in game.py)
+                res = STORE.start_round(code, token, mode, playlist_id, reverse_audio, audio_effect, audio_rate)
                 self._send_json(res)
             elif action == "buzz":
                 round_id = str(payload.get("round_id", ""))
@@ -384,23 +386,23 @@ def run_server(port: int = DEFAULT_PORT) -> None:
     lan_ip = get_lan_ip()
     server = ThreadingHTTPServer(("0.0.0.0", port), SoundbiteHandler)
 
-    print("🍞 ========================================================")
-    print("🍞 Soundbite Party Game Server is running!")
-    #print(f"🍞 Local URL: http://localhost:{port}")
-    #print(f"🍞 Phone LAN: http://{lan_ip}:{port}")
-    print(f"🍞 Join this link: http://{lan_ip}:{port}")
-    print("🍞 ========================================================")
+    print("🥪 ========================================================")
+    print("🥪 Soundwich Party Game Server is running!")
+    #print(f"🥪 Local URL: http://localhost:{port}")
+    #print(f"🥪 Phone LAN: http://{lan_ip}:{port}")
+    print(f"🥪 Join this link: http://{lan_ip}:{port}")
+    print("🥪 ========================================================")
 
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopping Soundbite server.")
+        print("\nStopping Soundwich server.")
     finally:
         server.server_close()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Soundbite Server")
+    parser = argparse.ArgumentParser(description="Soundwich Server")
     parser.add_argument(
         "--port",
         type=int,
