@@ -1,7 +1,7 @@
 # 🥪 Soundwich:
 
 
-Soundwich is a real-time multiplayer music-guessing party game: a host creates a room with a 4-digit code, friends join on their phones by either typing in the code or using our QR code (that we are unnecessarily proud of). There are multiple gamemodes: 
+Soundwich is a real-time multiplayer music-based guessing party game: a host creates a room with a 4-digit code, friends join on their phones by either typing in the code or using our QR code (that we are unnecessarily proud of). There are multiple gamemodes: 
  - Buzzer, where you can claim the floor and type in an answer the name of the song before your opponents do.
  - Type Race, where whoever first submits the correct answer wins the round and gains the most    points.
  - Music Roulette, where the aim is to guess the player who added the song that is playing.
