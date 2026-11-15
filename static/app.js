@@ -8,6 +8,7 @@
 import { syncClock, startClockSync, serverNow, getClockOffset, getLastRTT, absorbSnapshotTime } from './clock.js';
 import { Outbox, apiFetch, generateId, getConnectionState, onConnectionStateChange, debugConfig, setDebugOption } from './net.js';
 import { preloadAudio, schedulePlayback, stopAudio, isSoundMuted, setSoundMuted, unlockAudio, resumeAudio, setOnAudioBlocked } from './audio.js';
+import { attachButtonSfx } from './sfx.js';
 
 // DOM Helper
 const $ = (id) => document.getElementById(id);
@@ -35,6 +36,7 @@ const localPlaylists = [
 async function init() {
   setupDomListeners();
   setupDebugPanel();
+  attachButtonSfx('#home button:not(.secondary), #lobby button'); // hover + click sounds on home + lobby buttons
   const qrCode = new URLSearchParams(location.search).get('code');    
   if (qrCode) $('join-code').value = qrCode;
 
@@ -597,6 +599,14 @@ function handleActionResolved(action, outcome, freshSnapshot) {
 // ---------------------------------------------------------------------------
 
 function setupDomListeners() {
+  // Colour theme picker (saved on this device)
+  const themeSelect = $('theme-select');
+  themeSelect.value = document.documentElement.dataset.theme || 'toast';
+  themeSelect.onchange = () => {
+    document.documentElement.dataset.theme = themeSelect.value;
+    try { localStorage.setItem('soundbite_theme', themeSelect.value); } catch (e) {}
+  };
+
   // Sound controls
   $('sound-toggle-btn').onclick = () => {
     unlockAudio();

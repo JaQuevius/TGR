@@ -10,16 +10,117 @@
   --crust: #9c4f23;
   --green: #2e7d32;
   --red: #c62828;
+  --glow: #ffd875;            /* soft blob in the top-right corner */
+  --surface: #fffdf5;         /* inputs, pill buttons */
+  --surface-2: #fffdf8;       /* player rows */
+  --card-bg: rgba(255, 249, 233, .95);
+  --card-shadow: rgba(156, 79, 35, .15);
+  --btn-text: var(--ink);     /* text on the main (yellow) buttons */
+  --btn-shadow: #d59d1b;
+  --audio-bg: #ffe3a2;
+  --reveal-bg: #fff2d6;
+  --pattern-opacity: .16;
+}
+
+/* ---------- Colour themes (picked with the theme dropdown in the header) ---------- */
+:root[data-theme="midnight"] {
+  color-scheme: dark;
+  --ink: #f3eefe;
+  --muted: #a99fc4;
+  --bg: #14121f;
+  --panel: #1d1a2e;
+  --line: #4b3f72;
+  --lime: #a78bfa;
+  --orange: #f472b6;
+  --bread: #c084fc;
+  --crust: #e9d5ff;
+  --glow: #3b2a6b;
+  --surface: #1d1a2e;
+  --surface-2: #221e36;
+  --card-bg: rgba(29, 26, 46, .95);
+  --card-shadow: rgba(0, 0, 0, .35);
+  --btn-text: #14121f;
+  --btn-shadow: #7c5cd6;
+  --audio-bg: #2a2347;
+  --reveal-bg: #2a2347;
+  --pattern-opacity: .12;
+}
+:root[data-theme="mint"] {
+  --ink: #0d3b3a;
+  --muted: #3f7a76;
+  --bg: #e6f7f5;
+  --panel: #f0fdfa;
+  --line: #4fb3a9;
+  --lime: #2dd4bf;
+  --orange: #0284c7;
+  --bread: #14b8a6;
+  --crust: #0f766e;
+  --glow: #a7f3d0;
+  --surface: #f6fffd;
+  --surface-2: #f2fbfa;
+  --card-bg: rgba(240, 253, 250, .95);
+  --card-shadow: rgba(15, 118, 110, .15);
+  --btn-shadow: #14a394;
+  --audio-bg: #c9f2ec;
+  --reveal-bg: #dcf7f2;
+}
+:root[data-theme="berry"] {
+  --ink: #4a0d2b;
+  --muted: #9b4a6f;
+  --bg: #fff0f5;
+  --panel: #fff5fa;
+  --line: #e47aa5;
+  --lime: #ff8fb8;
+  --orange: #e0367a;
+  --bread: #d1477f;
+  --crust: #a3245a;
+  --glow: #ffc2d9;
+  --surface: #fff8fb;
+  --surface-2: #fffafc;
+  --card-bg: rgba(255, 245, 250, .95);
+  --card-shadow: rgba(163, 36, 90, .15);
+  --btn-shadow: #d9668f;
+  --audio-bg: #ffd6e6;
+  --reveal-bg: #ffe4ef;
+}
+
+#theme-select {
+  width: auto;
+  padding: 6px 10px;
+  background: var(--surface);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: radial-gradient(circle at 80% 5%, #ffd875 0, transparent 35%), var(--bg);
+  background: radial-gradient(circle at 80% 5%, var(--glow) 0, transparent 35%), var(--bg);
   color: var(--ink);
   font: 16px/1.45 Inter, ui-sans-serif, system-ui, sans-serif;
   min-height: 100vh;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  /* Fade: strongest on the right, fainter (but still there) on the left */
+  -webkit-mask-image: linear-gradient(to left, #000 0%, rgba(0, 0, 0, .35) 90%);
+  mask-image: linear-gradient(to left, #000 0%, rgba(0, 0, 0, .35) 90%);
+  pointer-events: none;
+  opacity: var(--pattern-opacity);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Ctext x='10' y='46' font-size='30'%3E%F0%9F%8D%9E%3C/text%3E%3Ctext x='74' y='44' font-size='30' fill='%23e56b2f'%3E%E2%99%AB%3C/text%3E%3Ctext x='42' y='106' font-size='34' fill='%23e56b2f'%3E%E2%99%AA%3C/text%3E%3C/svg%3E");
+  background-size: 120px 120px;
+  animation: pattern-scroll 12s linear infinite;
+}
+@keyframes pattern-scroll {
+  /* Moves right to left; the fade stays still */
+  from { background-position: 0 0; }
+  to   { background-position: -120px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body::before { animation: none; }
 }
 
 main {
@@ -33,6 +134,8 @@ header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap; /* on phones, the controls drop below the logo instead of squashing it */
+  gap: 10px;
   margin-bottom: 40px;
 }
 
@@ -41,6 +144,7 @@ header {
   letter-spacing: -.06em;
   font-size: 28px;
   color: var(--crust);
+  white-space: nowrap;
 }
 .brand span { color: var(--bread); }
 
@@ -62,7 +166,7 @@ header {
   border: 1px solid var(--line);
   padding: 6px 14px;
   border-radius: 99px;
-  background: #fffdf5;
+  background: var(--surface);
   color: var(--crust);
   font-size: 12px;
   font-weight: 800;
@@ -89,7 +193,7 @@ header {
   padding: 4px 10px;
   font-size: 12px;
   border-radius: 6px;
-  border: 1px solid #d68b3c;
+  border: 1px solid var(--line);
   background: var(--lime);
   color: var(--ink);
   font-weight: bold;
@@ -116,15 +220,38 @@ h1 {
 h1 em { color: var(--orange); font-style: normal; }
 .hero p { color: var(--muted); font-size: 18px; max-width: 520px; margin: 0; }
 
+/* Fredoka: round, friendly font for the home page tagline (stored locally so it works offline) */
+@font-face {
+  font-family: 'Fredoka';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('fonts/fredoka-latin.woff2') format('woff2');
+}
+/* Fredoka for the tagline and everything below it (cards, forms, buttons, lobby, game) */
+body {
+  font-family: 'Fredoka', Inter, ui-sans-serif, system-ui, sans-serif;
+}
+/* ...but keep the original font for the top of the page: header, eyebrow and big headline */
+header, .eyebrow, h1 {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+}
+.hero p {
+  font-weight: 500;
+  font-size: 21px;
+  line-height: 1.4;
+  letter-spacing: .01em;
+}
+
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .game-layout { display: grid; grid-template-columns: 1.35fr .65fr; gap: 18px; }
 
 .card {
-  background: rgba(255, 249, 233, .95);
+  background: var(--card-bg);
   border: 2px solid var(--line);
   border-radius: 20px;
   padding: 24px;
-  box-shadow: 0 6px 0 rgba(156, 79, 35, .15);
+  box-shadow: 0 6px 0 var(--card-shadow);
 }
 .card h2 { margin: 0 0 6px; letter-spacing: -.04em; font-size: 24px; color: var(--crust); }
 .card p { color: var(--muted); margin: 0 0 18px; }
@@ -143,7 +270,7 @@ input, select {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--line);
-  background: #fffdf5;
+  background: var(--surface);
   color: var(--ink);
   outline: none;
 }
@@ -155,8 +282,8 @@ button {
   font-weight: 800;
   cursor: pointer;
   background: var(--lime);
-  color: var(--ink);
-  box-shadow: 0 3px 0 #d59d1b;
+  color: var(--btn-text);
+  box-shadow: 0 3px 0 var(--btn-shadow);
 }
 button.secondary {
   background: transparent;
@@ -166,15 +293,69 @@ button.secondary {
 }
 button:disabled { opacity: .45; cursor: not-allowed; }
 .wide { width: 100%; margin-top: 18px; }
+
+/* Home + lobby buttons: lift on hover, squish on press, bounce after click */
+:is(#home, #lobby) button {
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease, background-color .15s ease;
+}
+:is(#home, #lobby) button span {
+  display: inline-block;
+  transition: transform .2s ease;
+}
+:is(#home, #lobby) button:not(.secondary):not(:disabled):hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 6px 0 var(--btn-shadow);
+  filter: brightness(1.05);
+}
+:is(#home, #lobby) button:not(:disabled):hover span {
+  transform: translateX(5px); /* arrow nudges right */
+}
+:is(#home, #lobby) button:not(.secondary):not(:disabled):active {
+  transform: translateY(2px) scale(.98);
+  box-shadow: 0 1px 0 var(--btn-shadow);
+  transition-duration: .05s;
+}
+/* Outline buttons (e.g. "Leave lobby"): gentler lift + light fill */
+:is(#home, #lobby) button.secondary:not(:disabled):hover {
+  transform: translateY(-2px);
+  background-color: var(--surface);
+  box-shadow: 0 4px 0 var(--card-shadow);
+}
+:is(#home, #lobby) button.secondary:not(:disabled):active {
+  transform: translateY(1px) scale(.98);
+  box-shadow: none;
+  transition-duration: .05s;
+}
+:is(#home, #lobby) button.btn-pop {
+  animation: btn-pop .35s ease;
+}
+@keyframes btn-pop {
+  0%   { transform: scale(.96); }
+  45%  { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(#home, #lobby) button, :is(#home, #lobby) button span { transition: none; }
+  :is(#home, #lobby) button.btn-pop { animation: none; }
+}
 .error { color: var(--orange); min-height: 22px; margin-top: 10px; font-size: 14px; }
 .hidden { display: none !important; }
 
 .topline { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
 .code { color: var(--crust); font: 900 44px/1 monospace; letter-spacing: .08em; }
-.code small { font: 12px sans-serif; color: var(--muted); display: block; letter-spacing: .1em; margin-bottom: 6px; }
+.code small { font: 12px 'Fredoka', sans-serif; color: var(--muted); display: block; letter-spacing: .1em; margin-bottom: 6px; }
 
 #join-qr { margin-top: 12px; }
-#join-qr svg { width: 220px; height: 220px; background: #fff; border-radius: 8px; }
+#join-qr svg {
+  display: block;
+  width: 220px;
+  height: 220px;
+  padding: 6px;
+  background: #fff; /* stays white in every theme so phones can scan it */
+  border: 4px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 5px 0 var(--card-shadow);
+}
 
 .players { margin: 20px 0; display: grid; gap: 8px; }
 .player {
@@ -184,7 +365,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: #fffdf8;
+  background: var(--surface-2);
 }
 .player.dimmed { opacity: 0.45; }
 .score { color: var(--crust); font-weight: 800; }
@@ -195,7 +376,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .audio-box {
   text-align: center;
   padding: 30px 16px;
-  background: #ffe3a2;
+  background: var(--audio-bg);
   border: 2px dashed var(--bread);
   border-radius: 16px;
   margin: 16px 0;
@@ -286,7 +467,7 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .status { color: var(--orange); min-height: 24px; margin-top: 12px; font-weight: 700; }
 
 .reveal-card {
-  background: #fff2d6;
+  background: var(--reveal-bg);
   border: 2px solid var(--bread);
   border-radius: 14px;
   padding: 16px 20px;

@@ -3,15 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Soundbite — Toasted Music Guessing</title>
+  <title>Soundbite — Toasty Music Guessing</title>
   <link rel="stylesheet" href="styles.css">
+  <!-- Apply the saved colour theme before the page draws (avoids a flash of the default theme) -->
+  <script>
+    try { document.documentElement.dataset.theme = localStorage.getItem('soundbite_theme') || 'toast'; } catch (e) {}
+  </script>
 </head>
 <body>
 <main>
   <!-- Global Top Header -->
   <header>
     <div class="brand">🍞 sound<span>bite</span></div>
-    <div style="display:flex; align-items:center; gap:10px;">
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+      <select id="theme-select" class="pill-btn" title="Colour theme" aria-label="Colour theme">
+        <option value="toast">🍞 Toast</option>
+        <option value="midnight">🌙 Midnight</option>
+        <option value="mint">🌿 Mint</option>
+        <option value="berry">🍓 Berry</option>
+      </select>
       <button id="sound-toggle-btn" class="pill-btn sound-btn" title="Toggle audio on this device">🔊 Sound ON</button>
       <div id="connection-pill" class="pill conn-online">● Online</div>
     </div>
@@ -25,9 +35,9 @@
   <!-- SECTION 1: HOME -->
   <section id="home">
     <div class="hero">
-      <div class="eyebrow">a toasted music guessing game</div>
-      <h1>Hear it.<br><em>Claim it.</em></h1>
-      <p>Play short soundbites, buzz in before your friends, and claim the floor to climb the scoreboard.</p>
+      <div class="eyebrow">a toasty music guessing game</div>
+      <h1>Hear it. <em>Claim it.</em></h1>
+      <p>Play short soundbites, buzz in before your friends, and claim the floor to climb the scoreboard! </p>
     </div>
 
     <!-- Rejoin previous session if available -->
@@ -74,14 +84,14 @@
       <!-- Player Roster -->
       <div class="card">
         <h2>Players <span id="player-count">(0)</span></h2>
-        <p>Share the four-digit code. Anyone can join at any time.</p>
+        <p>Share the four-digit code or the QR code presented above. Anyone can join at any time.</p>
         <div class="players" id="lobby-players"></div>
       </div>
 
       <!-- Host Controls -->
       <div class="card" id="host-controls">
         <h2>Round Setup</h2>
-        <p>Choose the game mode and playlist for the upcoming round.</p>
+        <p>Choose the game mode, song direction and playlist for the upcoming round.</p>
         <label for="mode-select">Game Mode</label>
         <select id="mode-select">
           <option value="race" selected>Typing Race (Everyone types)</option>
@@ -223,6 +233,6 @@
 <script src="vendor/qrcode.js"></script>
 =======
 >>>>>>> 4904b9064bea5d632f8204080df239c0960fdd02
-<script type="module" src="app.js?v=11"></script>
+<script type="module" src="app.js?v=15"></script>
 </body>
 </html>
